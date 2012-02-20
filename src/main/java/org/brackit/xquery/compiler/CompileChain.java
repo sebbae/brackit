@@ -38,8 +38,15 @@ import org.brackit.xquery.compiler.parser.XQParser;
 import org.brackit.xquery.compiler.translator.PipelineCompiler;
 import org.brackit.xquery.compiler.translator.Translator;
 import org.brackit.xquery.function.bit.Every;
+import org.brackit.xquery.function.bit.GetForkBuffer;
+import org.brackit.xquery.function.bit.GetPoolSize;
+import org.brackit.xquery.function.bit.GetSerializerPermits;
 import org.brackit.xquery.function.bit.Parse;
 import org.brackit.xquery.function.bit.Put;
+import org.brackit.xquery.function.bit.Serialize;
+import org.brackit.xquery.function.bit.SetForkBuffer;
+import org.brackit.xquery.function.bit.SetPoolSize;
+import org.brackit.xquery.function.bit.SetSerializerPermits;
 import org.brackit.xquery.function.bit.Silent;
 import org.brackit.xquery.function.bit.Some;
 import org.brackit.xquery.function.io.Readline;
@@ -86,6 +93,13 @@ public class CompileChain {
 		Functions.predefine(new Writeline());
 		Functions.predefine(new Silent());
 		Functions.predefine(new Parse());
+		Functions.predefine(new SetPoolSize());
+		Functions.predefine(new GetPoolSize());
+		Functions.predefine(new Serialize());
+		Functions.predefine(new SetForkBuffer());
+		Functions.predefine(new GetForkBuffer());
+		Functions.predefine(new GetSerializerPermits());
+		Functions.predefine(new SetSerializerPermits());
 	}
 	
 	final AnyURI baseURI;
