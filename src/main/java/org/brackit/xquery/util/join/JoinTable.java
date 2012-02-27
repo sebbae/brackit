@@ -28,6 +28,7 @@
 package org.brackit.xquery.util.join;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.atomic.Atomic;
@@ -70,13 +71,25 @@ public abstract class JoinTable {
 	}
 
 	static class TValue implements Comparable<TValue> {
+		private static final AtomicReferenceFieldUpdater<TValue, TValue> NEXT_CAS = AtomicReferenceFieldUpdater
+				.newUpdater(TValue.class, TValue.class, "next");
+
 		final Sequence[] bindings;
 		final int pos;
-		TValue next; // next pointer to chain matches with different pos
+		// next pointer to chain matches with different pos
+		private volatile TValue next;
 
 		TValue(Sequence[] bindings, int pos) {
 			this.bindings = bindings;
 			this.pos = pos;
+		}
+
+		TValue getNext() {
+			return next;
+		}
+
+		boolean setNext(TValue next) {
+			return NEXT_CAS.compareAndSet(this, null, next);
 		}
 
 		@Override

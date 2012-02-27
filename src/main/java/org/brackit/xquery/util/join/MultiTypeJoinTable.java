@@ -27,10 +27,7 @@
  */
 package org.brackit.xquery.util.join;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.atomic.Atomic;
@@ -50,27 +47,29 @@ import org.brackit.xquery.xdm.Type;
  */
 public class MultiTypeJoinTable {
 
+	private static final Object DUMMY = new Object();
+
 	private final Cmp cmp;
 
 	private final boolean isGCmp;
 
 	private final boolean skipSort;
 
-	private final Map<Type, JoinTable> tables = new HashMap<Type, JoinTable>();
+	private final ConcurrentHashMap<Type, JoinTable> tables = new ConcurrentHashMap<Type, JoinTable>();
 
-	private final Set<Type> convertedUntypedAtomic = new HashSet<Type>();
+	private final ConcurrentHashMap<Type, Object> convertedUntypedAtomic = new ConcurrentHashMap<Type, Object>();
 
-	private final Set<Type> nonNumericTypes = new HashSet<Type>();
+	private final ConcurrentHashMap<Type, Object> nonNumericTypes = new ConcurrentHashMap<Type, Object>();
 
-	private boolean convertedUntypedAtomicToDbl;
+	private volatile boolean convertedUntypedAtomicToDbl;
 
-	private boolean promotedNumericToDbl;
+	private volatile boolean promotedNumericToDbl;
 
-	private boolean promotedNumericToFlo;
+	private volatile boolean promotedNumericToFlo;
 
-	private boolean promotedNumericToDec;
+	private volatile boolean promotedNumericToDec;
 
-	private boolean numericPresent;
+	private volatile boolean numericPresent;
 
 	public MultiTypeJoinTable(Cmp cmp, boolean isGCmp, boolean skipSort) {
 		this.cmp = cmp;
@@ -95,13 +94,14 @@ public class MultiTypeJoinTable {
 		JoinTable table = tables.get(type);
 		if (table == null) {
 			table = createTable(type);
-			tables.put(type, table);
+			JoinTable tmp = tables.putIfAbsent(type, table);
+			table = (tmp != null) ? tmp : table;
 		}
 		table.add(atomic, pos, bindings);
 		if (type.isNumeric()) {
 			numericPresent = true;
 		} else {
-			nonNumericTypes.add(type);
+			nonNumericTypes.put(type, DUMMY);
 		}
 	}
 
@@ -116,16 +116,13 @@ public class MultiTypeJoinTable {
 		}
 
 		if (type == Type.UNA) {
-			for (Type nnType : nonNumericTypes) {
+			for (Type nnType : nonNumericTypes.keySet()) {
 				probeAtomic(matches, Cast.cast(null, atomic, nnType, false),
 						nnType);
 			}
 			if (numericPresent) {
 				if (!promotedNumericToDbl) {
-					addToTable(Type.INR, Type.DBL);
-					addToTable(Type.DEC, Type.DBL);
-					addToTable(Type.FLO, Type.DBL);
-					promotedNumericToDbl = true;
+					promoteToDbl();
 				}
 				probeAtomic(matches, Cast.cast(null, atomic, Type.DBL, false),
 						Type.DBL);
@@ -133,24 +130,17 @@ public class MultiTypeJoinTable {
 		} else if (type.isNumeric()) {
 			// convert all untyped to dbl and add them
 			if (!convertedUntypedAtomicToDbl) {
-				addToTable(Type.UNA, Type.DBL);
-				convertedUntypedAtomicToDbl = true;
+				convertUntypedAtomicToDbl();
 			}
-
+			// promote numerics with lower precedence and probe
 			if ((type == Type.DBL) && (!promotedNumericToDbl)) {
-				addToTable(Type.INR, Type.DBL);
-				addToTable(Type.DEC, Type.DBL);
-				addToTable(Type.FLO, Type.DBL);
-				promotedNumericToDbl = true;
+				promoteToDbl();
 			} else if ((type == Type.FLO) && (!promotedNumericToFlo)) {
-				addToTable(Type.INR, Type.FLO);
-				addToTable(Type.DEC, Type.FLO);
-				promotedNumericToFlo = true;
+				promoteToFlt();
 				probeAtomic(matches, Cast.cast(null, atomic, Type.DBL, false),
 						Type.DBL);
 			} else if ((type == Type.DEC) && (!promotedNumericToDec)) {
-				addToTable(Type.INR, Type.DEC);
-				promotedNumericToDec = true;
+				promoteToDec();
 				probeAtomic(matches, Cast.cast(null, atomic, Type.DBL, false),
 						Type.DBL);
 				probeAtomic(matches, Cast.cast(null, atomic, Type.FLO, false),
@@ -167,9 +157,8 @@ public class MultiTypeJoinTable {
 			probeAtomic(matches, atomic, type);
 		} else {
 			// convert all untyped to type and add them
-			if (!convertedUntypedAtomic.contains(type)) {
-				addToTable(Type.UNA, type);
-				convertedUntypedAtomic.add(type);
+			if (!convertedUntypedAtomic.containsKey(type)) {
+				convertUntypedAtomicToType(type);
 			}
 
 			probeAtomic(matches, atomic, type);
@@ -184,6 +173,45 @@ public class MultiTypeJoinTable {
 		}
 	}
 
+	private synchronized void convertUntypedAtomicToType(Type type)
+			throws QueryException {
+		if (!convertedUntypedAtomic.containsKey(type)) {
+			addToTable(Type.UNA, type);
+			convertedUntypedAtomic.put(type, DUMMY);
+		}
+	}
+
+	private synchronized void convertUntypedAtomicToDbl() throws QueryException {
+		if (!convertedUntypedAtomicToDbl) {
+			addToTable(Type.UNA, Type.DBL);
+			convertedUntypedAtomicToDbl = true;
+		}
+	}
+
+	private synchronized void promoteToDec() throws QueryException {
+		if (!promotedNumericToDec) {
+			addToTable(Type.INR, Type.DEC);
+			promotedNumericToDec = true;
+		}
+	}
+
+	private synchronized void promoteToFlt() throws QueryException {
+		if (!promotedNumericToFlo) {
+			addToTable(Type.INR, Type.FLO);
+			addToTable(Type.DEC, Type.FLO);
+			promotedNumericToFlo = true;
+		}
+	}
+
+	private synchronized void promoteToDbl() throws QueryException {
+		if (!promotedNumericToDbl) {
+			addToTable(Type.INR, Type.DBL);
+			addToTable(Type.DEC, Type.DBL);
+			addToTable(Type.FLO, Type.DBL);
+			promotedNumericToDbl = true;
+		}
+	}
+
 	private void addToTable(Type from, Type to) throws QueryException {
 		JoinTable fromTable = tables.get(from);
 
@@ -194,18 +222,18 @@ public class MultiTypeJoinTable {
 		JoinTable table = tables.get(to);
 		if (table == null) {
 			table = createTable(to);
-			tables.put(to, table);
-		}
-
-		for (TEntry entry : fromTable.entries()) {
-			table.add(Cast.cast(null, entry.key.atomic, to, false),
-					entry.value.pos, entry.value.bindings);
+			for (TEntry entry : fromTable.entries()) {
+				table.add(Cast.cast(null, entry.key.atomic, to, false),
+						entry.value.pos, entry.value.bindings);
+			}
+			JoinTable tmp = tables.putIfAbsent(to, table);
+			table = (tmp != null) ? tmp : table;
 		}
 
 		if (to.isNumeric()) {
 			numericPresent = true;
 		} else {
-			nonNumericTypes.add(to);
+			nonNumericTypes.put(to, DUMMY);
 		}
 	}
 
@@ -245,7 +273,7 @@ public class MultiTypeJoinTable {
 			throws QueryException {
 		if (keys == null) {
 			return;
-		} 
+		}
 		if (keys instanceof Item) {
 			addItem((Item) keys, bindings, pos);
 		} else {

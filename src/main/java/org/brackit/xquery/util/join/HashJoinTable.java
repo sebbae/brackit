@@ -28,9 +28,9 @@
 package org.brackit.xquery.util.join;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.atomic.Atomic;
@@ -42,7 +42,8 @@ import org.brackit.xquery.xdm.Sequence;
  * 
  */
 public class HashJoinTable extends JoinTable {
-	private final HashMap<TKey, TValue> table = new HashMap<TKey, TValue>();
+
+	private final ConcurrentHashMap<TKey, TValue> table = new ConcurrentHashMap<TKey, TValue>();
 
 	protected void add(Atomic key, int pos, Sequence[] bindings)
 			throws QueryException {
@@ -51,18 +52,23 @@ public class HashJoinTable extends JoinTable {
 
 		TValue chain = table.get(htKey);
 
-		if (chain == null) {
-			table.put(htKey, htValue);
-		} else {
-			TValue p = null;
-			while (chain != null) {
-				if (chain.pos == pos) {
+		if ((chain == null)
+				&& ((chain = table.putIfAbsent(htKey, htValue)) == null)) {
+			return;
+		}
+		TValue p = null;
+		while (true) {
+			if (chain.pos == pos) {
+				return;
+			}
+			p = chain;
+			chain = chain.getNext();
+			if (chain == null) {
+				if (p.setNext(htValue)) {
 					return;
 				}
-				p = chain;
-				chain = chain.next;
+				chain = p.getNext();
 			}
-			p.next = htValue;
 		}
 	}
 
@@ -76,7 +82,7 @@ public class HashJoinTable extends JoinTable {
 			while (htValue != null) {
 				// System.out.print(" " + htKey);
 				matches.add(htValue);
-				htValue = htValue.next;
+				htValue = htValue.getNext();
 			}
 			// System.out.println();
 		}
@@ -86,7 +92,7 @@ public class HashJoinTable extends JoinTable {
 	protected List<TEntry> entries() {
 		ArrayList<TEntry> entries = new ArrayList<TEntry>();
 		for (Map.Entry<TKey, TValue> entry : table.entrySet()) {
-			for (TValue v = entry.getValue(); v != null; v = v.next) {
+			for (TValue v = entry.getValue(); v != null; v = v.getNext()) {
 				entries.add(new TEntry(entry.getKey(), v));
 			}
 		}

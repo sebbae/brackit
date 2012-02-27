@@ -38,7 +38,7 @@ import java.util.Arrays;
  */
 public class FastList<E> {
 
-	@SuppressWarnings("unchecked")
+	@SuppressWarnings({ "rawtypes" })
 	public static final FastList EMPTY_LIST = new FastList(0);
 
 	private Object[] values;
@@ -65,11 +65,13 @@ public class FastList<E> {
 	public void addAll(E[] v, int off, int len) {
 		capacity(size + len);
 		System.arraycopy(v, off, values, size, len);
+		size += len;
 	}
-	
+
 	public void addAllSafe(Object[] v, int off, int len) {
 		capacity(size + len);
 		System.arraycopy(v, off, values, size, len);
+		size += len;
 	}
 
 	private void capacity(int capacity) {
@@ -99,5 +101,10 @@ public class FastList<E> {
 
 	public void ensureAdditional(int len) {
 		capacity(size + len);
+	}
+
+	public int copyTo(E[] to, int pos) {
+		System.arraycopy(values, 0, to, pos, size);
+		return pos + size;
 	}
 }

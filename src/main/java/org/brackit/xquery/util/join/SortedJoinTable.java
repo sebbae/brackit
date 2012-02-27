@@ -43,34 +43,54 @@ import org.brackit.xquery.xdm.Sequence;
  */
 public class SortedJoinTable extends JoinTable {
 	private final Cmp cmp;
-
-	private TEntry[] entries = new TEntry[50];
-
-	private int size;
-
-	private boolean sorted;
+	@SuppressWarnings("unchecked")
+	private final FastList<TEntry>[] segments = new FastList[16];
+	private volatile TEntry[] entries;
 
 	public SortedJoinTable(Cmp cmp) {
 		this.cmp = cmp;
+		for (int i = 0; i < segments.length; i++) {
+			segments[i] = new FastList<JoinTable.TEntry>(10);
+		}
+	}
+
+	private void buildTable() {
+		synchronized (this) {
+			if (entries == null) {
+				int size = 0;
+				for (int i = 0; i < segments.length; i++) {
+					size += segments[i].getSize();
+				}
+				TEntry[] tmp = new TEntry[size];
+				int pos = 0;
+				for (int i = 0; i < segments.length; i++) {
+					pos = segments[i].copyTo(tmp, pos);
+					segments[i] = null; // allow gc
+				}
+				Arrays.sort(tmp, 0, size);
+				entries = tmp;
+			}
+		}
 	}
 
 	@Override
 	protected void add(Atomic key, int pos, Sequence[] bindings)
 			throws QueryException {
-		if (size == entries.length) {
-			entries = Arrays.copyOf(entries, (entries.length * 3) / 2 + 1);
+		TEntry entry = new TEntry(new TKey(key), new TValue(bindings, pos));
+		long tid = Thread.currentThread().getId();
+		int hash = (((int) (tid ^ (tid >>> 32))) % segments.length);
+		FastList<TEntry> list = segments[hash];
+		synchronized (list) {
+			list.add(entry);
 		}
-		entries[size++] = new TEntry(new TKey(key), new TValue(bindings, pos));
 	}
 
 	@Override
 	protected void lookup(FastList<TValue> matches, Atomic key)
 			throws QueryException {
-		if (!sorted) {
-			Arrays.sort(entries, 0, size);
-			sorted = true;
+		if (entries == null) {
+			buildTable();
 		}
-
 		if (cmp == Cmp.eq) {
 			equalLookup(matches, key);
 		} else if ((cmp == Cmp.le) || (cmp == Cmp.lt)) {
@@ -85,6 +105,7 @@ public class SortedJoinTable extends JoinTable {
 
 	private void lessLookup(FastList<TValue> matches, Atomic key) {
 		TKey tKey = new TKey(key);
+		int size = entries.length;
 		int lower = 0;
 		int upper = size - 1;
 		while (lower < upper) {
@@ -105,6 +126,7 @@ public class SortedJoinTable extends JoinTable {
 
 	private void greaterLookup(FastList<TValue> matches, Atomic key) {
 		TKey tKey = new TKey(key);
+		int size = entries.length;
 		int lower = 0;
 		int upper = size - 1;
 		while (lower < upper) {
@@ -125,6 +147,7 @@ public class SortedJoinTable extends JoinTable {
 
 	private void equalLookup(FastList<TValue> matches, Atomic key) {
 		TKey tKey = new TKey(key);
+		int size = entries.length;
 		int res = -1;
 		int lower = 0;
 		int upper = size - 1;
@@ -162,6 +185,7 @@ public class SortedJoinTable extends JoinTable {
 
 	@Override
 	protected List<TEntry> entries() {
+		int size = entries.length;
 		return Arrays.asList(Arrays.copyOfRange(entries, 0, size));
 	}
 }
