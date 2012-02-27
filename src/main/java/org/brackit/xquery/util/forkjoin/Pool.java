@@ -69,11 +69,6 @@ public class Pool {
 		}
 	}
 
-	public int getStealCount() {
-		// TODO Auto-generated method stub
-		return 0;
-	}
-
 	Task stealTask(Worker stealer) {
 		Task t;
 		if ((stealer.victim != null)
@@ -121,7 +116,7 @@ public class Pool {
 				// process stolen task from other thread
 				t.exec();
 			} else {
-				join.externalWaitForFinish();
+				LockSupport.parkNanos(1000);
 			}
 		}
 	}
@@ -137,7 +132,7 @@ public class Pool {
 				// process stolen task from other thread
 				t.exec();
 			} else {
-				join.externalWaitForFinish();
+				LockSupport.parkNanos(1000);
 			}
 		}
 	}
@@ -150,7 +145,7 @@ public class Pool {
 				t.exec();
 			} else if ((t = stealTask(w)) != null) {
 				t.exec();
-			} else if (++retry == 16) {
+			} else if (++retry == 64) {
 				if (LOG) {
 					System.out.println(w + " goes parking");
 				}
@@ -160,6 +155,8 @@ public class Pool {
 				if (LOG) {
 					System.out.println(w + " unparking");
 				}
+			} else if (retry % 16 == 0) {
+				LockSupport.parkNanos(1000);
 			}
 		}
 	}

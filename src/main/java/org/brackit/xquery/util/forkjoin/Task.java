@@ -27,49 +27,66 @@
  */
 package org.brackit.xquery.util.forkjoin;
 
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 /**
  * 
  * @author Sebastian Baechle
- *
+ * 
  */
 public abstract class Task {
 
-	private static final AtomicReferenceFieldUpdater<Task, Worker> OWNER_CAS = AtomicReferenceFieldUpdater
-			.newUpdater(Task.class, Worker.class, "owner");
+	private static final AtomicIntegerFieldUpdater<Task> STATUS_CAS = AtomicIntegerFieldUpdater
+			.newUpdater(Task.class, "status");
+
+	private static final int SUCCESS = 1;
+	private static final int ERROR = 2;
+	private static final int NOTIFY = -1;
 
 	volatile int status = 0;
-	volatile Worker owner;
 	Throwable throwable;
 
 	public abstract void compute() throws Throwable;
 
-	boolean assign(Worker w) {
-		return (OWNER_CAS.compareAndSet(this, null, w));
-	}
-	
 	void exec() {
 		try {
 			int s = status;
-			if (s != 0) {
+			if (s > 0) {
 				throw new RuntimeException("Illegal state: " + s);
 			}
 			compute();
-			status = 1; // done
+			setStatus(SUCCESS);
 		} catch (Throwable e) {
 			e.printStackTrace();
-			status = -1; // error
 			throwable = e;
+			setStatus(ERROR);
 		}
-		signalFinish();
 	}
 
-	protected void fork() {
+	private int setStatus(int newStatus) {
+		int s;
+		while (true) {
+			s = status;
+			if (s > 0) {
+				// job is done
+				return s;
+			}
+			if (STATUS_CAS.compareAndSet(this, s, newStatus)) {
+				if (s < 0) {
+					synchronized (this) {
+						notifyAll();
+					}
+				}
+				return s;
+			}
+		}
+	}
+
+	public void fork() {
 		((Worker) Thread.currentThread()).fork(this);
 	}
 
-	protected void join() {
+	public void join() {
 		Thread me;
 		if ((me = Thread.currentThread()) instanceof Worker) {
 			Worker w = (Worker) me;
@@ -93,15 +110,20 @@ public abstract class Task {
 		externalWaitForFinish();
 	}
 
-	synchronized void signalFinish() {
-		notifyAll();
-	}
-
-	synchronized void externalWaitForFinish() {
-		while (status == 0) {
-			try {
-				wait();
-			} catch (InterruptedException e) {
+	void externalWaitForFinish() {
+		int s = status;
+		if (s <= 0) {
+			synchronized (this) {
+				while ((s = status) <= 0) {
+					if (s == 0) {
+						setStatus(NOTIFY);
+					} else {
+						try {
+							wait();
+						} catch (InterruptedException e) {
+						}
+					}
+				}
 			}
 		}
 	}
