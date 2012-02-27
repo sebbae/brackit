@@ -51,16 +51,15 @@ public class GroupBy implements Block {
 			this.grp = new Grouping(groupSpecs, onlyLast);
 		}
 
-		private GroupBySink(Semaphore sem, CB cb, SerialSink next, Sink sink,
-				Grouping grp) {
-			super(sem, cb, next);
+		private GroupBySink(Semaphore sem, SerialSink next, Sink sink, Grouping grp) {
+			super(sem, next);
 			this.sink = sink;
 			this.grp = grp;
 		}
 
 		@Override
-		protected SerialSink doFork(Semaphore sem, CB cb, SerialSink next) {
-			return new GroupBySink(sem, cb, next, sink, grp);
+		protected SerialSink doFork(Semaphore sem, SerialSink next) {
+			return new GroupBySink(sem, next, sink, grp);
 		}
 
 		@Override
@@ -100,6 +99,11 @@ public class GroupBy implements Block {
 	public GroupBy(int groupSpecCount, boolean onlyLast) {
 		this.groupSpecs = new int[groupSpecCount];
 		this.onlyLast = onlyLast;
+	}
+
+	@Override
+	public int outputWidth(int initSize) {
+		return initSize;
 	}
 
 	public Sink create(QueryContext ctx, Sink sink) throws QueryException {

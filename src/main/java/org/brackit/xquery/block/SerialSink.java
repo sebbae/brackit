@@ -41,7 +41,7 @@ import org.brackit.xquery.util.forkjoin.Worker;
  * @author Sebastian Baechle
  *
  */
-public abstract class SerialSink implements AsyncSink {
+public abstract class SerialSink implements Sink {
 
 	private static final int NO_TOKEN = 0;
 	private static final int WAIT_TOKEN = 1;
@@ -52,49 +52,28 @@ public abstract class SerialSink implements AsyncSink {
 	private static final int START_STATE = NO_TOKEN;
 
 	final Semaphore sem;
-	final CB cb;
 	SerialSink next;
 	Tuple[] head;
 	int size;
 	volatile int state;
 	volatile Deque<Task> deposit;
 
-	protected static class CB {
-		boolean finished;
-
-		synchronized void block() {
-			while (!finished) {
-				try {
-					wait();
-				} catch (InterruptedException e) {
-				}
-			}
-		}
-
-		synchronized void finish() {
-			finished = true;
-			notifyAll();
-		}
-	}
-
 	public SerialSink(int permits) {
 		this.state = HAS_TOKEN;
 		this.sem = new Semaphore(permits);
-		this.cb = new CB();
 	}
 
-	protected SerialSink(Semaphore sem, CB cb, SerialSink next) {
+	protected SerialSink(Semaphore sem, SerialSink next) {
 		this.state = START_STATE;
-		this.cb = cb;
 		this.sem = sem;
 		this.next = next;
 	}
 
 	public final SerialSink fork() {
-		return (next = doFork(sem, cb, next));
+		return (next = doFork(sem, next));
 	}
 
-	protected abstract SerialSink doFork(Semaphore sem, CB cb, SerialSink next);
+	protected abstract SerialSink doFork(Semaphore sem, SerialSink next);
 
 	protected abstract void doOutput(Tuple[] buf, int len)
 			throws QueryException;
@@ -204,8 +183,6 @@ public abstract class SerialSink implements AsyncSink {
 		}
 		if (n == null) {
 			doEnd();
-			// notify external caller
-			cb.finish();
 		}
 	}
 
@@ -232,8 +209,7 @@ public abstract class SerialSink implements AsyncSink {
 			n = n.next;
 		}
 		if (n == null) {
-			// notify external caller
-			cb.finish();
+			// notify external caller?
 		}
 	}
 
@@ -268,11 +244,6 @@ public abstract class SerialSink implements AsyncSink {
 
 	public String toString() {
 		return "[" + String.valueOf(me()) + "]";
-	}
-
-	@Override
-	public void waitForCompletion() {
-		cb.block();
 	}
 
 	private String chain() {

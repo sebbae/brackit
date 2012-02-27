@@ -17,8 +17,8 @@
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
  * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
  * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
@@ -27,16 +27,51 @@
  */
 package org.brackit.xquery.block;
 
-import org.brackit.xquery.QueryContext;
+import java.util.concurrent.Semaphore;
+
 import org.brackit.xquery.QueryException;
+import org.brackit.xquery.Tuple;
 
 /**
  * 
  * @author Sebastian Baechle
  * 
  */
-public interface Block {
-	public Sink create(QueryContext ctx, Sink sink) throws QueryException;
+public final class SerialValve extends SerialSink {
+	final Sink sink;
 
-	public int outputWidth(int inputWidth);
+	public SerialValve(int permits, Sink sink) {
+		super(permits);
+		this.sink = sink;
+	}
+
+	private SerialValve(Semaphore sem, SerialSink next, Sink sink) {
+		super(sem, next);
+		this.sink = sink;
+	}
+
+	@Override
+	protected SerialSink doFork(Semaphore sem, SerialSink next) {
+		return new SerialValve(sem, next, sink);
+	}
+
+	@Override
+	protected void doOutput(Tuple[] buf, int len) throws QueryException {
+		sink.output(buf, len);
+	}
+
+	@Override
+	protected void doBegin() throws QueryException {
+		sink.begin();
+	}
+
+	@Override
+	protected void doEnd() throws QueryException {
+		sink.end();
+	}
+
+	@Override
+	protected void doFail() throws QueryException {
+		sink.fail();
+	}
 }

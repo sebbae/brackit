@@ -17,8 +17,8 @@
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
  * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
  * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
@@ -27,11 +27,52 @@
  */
 package org.brackit.xquery.block;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.brackit.xquery.QueryException;
 
 /**
  * @author Sebastian Baechle
  * 
  */
-public interface AsyncSink extends Sink {
-	public void waitForCompletion();
+public abstract class ConcurrentSink implements Sink {
+
+	protected final AtomicInteger alive;
+
+	public ConcurrentSink() {
+		this.alive = new AtomicInteger(1);
+	}
+
+	protected void doBegin() throws QueryException {
+	}
+
+	protected void doEnd() throws QueryException {
+	}
+
+	protected void doFail() throws QueryException {
+	}
+
+	@Override
+	public final Sink fork() {
+		alive.incrementAndGet();
+		return this;
+	}
+
+	@Override
+	public final void end() throws QueryException {
+		if (alive.decrementAndGet() == 0) {
+			doEnd();
+		}
+	}
+
+	@Override
+	public final void begin() throws QueryException {
+		doBegin();
+	}
+
+	@Override
+	public final void fail() throws QueryException {
+		doFail();
+	}
+
 }

@@ -27,7 +27,6 @@
  */
 package org.brackit.xquery.block;
 
-import org.brackit.xquery.ErrorCode;
 import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
@@ -44,12 +43,19 @@ import org.brackit.xquery.util.forkjoin.Task;
  */
 public class FLW implements Block {
 
-	private static final boolean LOG = false;
-
 	final Operator[] op;
 
 	public FLW(Operator[] op) {
 		this.op = op;
+	}
+
+	@Override
+	public int outputWidth(int initSize) {
+		int s = initSize;
+		for (Operator o : op) {
+			s = o.tupleWidth(s);
+		}
+		return s;
 	}
 
 	@Override
@@ -61,22 +67,130 @@ public class FLW implements Block {
 		System.out.println(Thread.currentThread() + ": " + msg);
 	}
 
-	class FLWSink extends FJControl implements Sink {
+	private static class Buf {
+		Tuple[] b;
+		int len;
+
+		Buf(int size) {
+			this.b = new Tuple[size];
+		}
+
+		boolean add(Tuple t) {
+			b[len++] = t;
+			return len < b.length;
+		}
+	}
+
+	private class Slice extends Task {
+		final QueryContext ctx;
+		final Sink s;
+		final Cursor off;
+		final int d;
+		Slice fork;
+
+		private Slice(QueryContext ctx, Sink s, Cursor off, int d) {
+			this.ctx = ctx;
+			this.s = s;
+			this.off = off;
+			this.d = d;
+		}
+
+		public void compute() throws QueryException {
+			try {
+				s.begin();
+				fork = bind(off, d);
+				s.end();
+			} catch (QueryException e) {
+				s.fail();
+				throw e;
+			}
+		}
+
+		private Slice bind(Cursor c, int d) throws QueryException {
+			Buf buf = new Buf(bufSize(d));
+			Slice fork = fillBuffer(c, d, buf);
+			if (buf.len == 0) {
+				return null;
+			}
+			// process local share
+			if (d + 1 < op.length) {
+				descend(d, buf);
+			} else {
+				output(buf);
+			}
+			return fork;
+		}
+
+		private void output(Buf buf) throws QueryException {
+			s.output(buf.b, buf.len);
+		}
+
+		private void descend(int d, Buf buf) throws QueryException {
+			Cursor c2 = op[d + 1].create(ctx, buf.b, buf.len);
+			c2.open(ctx);
+			buf = null; // allow gc
+			Slice fork = bind(c2, d + 1);
+			if (fork != null) {
+				fork.join();
+			}
+		}
+
+		private Slice fillBuffer(Cursor c, int d, Buf buf)
+				throws QueryException {
+			while (true) {
+				Tuple t = c.next(ctx);
+				if (t != null) {
+					if (!buf.add(t)) {
+						Slice fork = new Slice(ctx, s.fork(), c, d);						
+						fork.fork();
+						return fork;
+					}
+				} else {
+					c.close(ctx);
+					c = null; // allow garbage collection
+					return null;
+				}
+			}
+		}
+
+		private int bufSize(int d) {
+			if (d < 0) {
+				return 1;
+			}
+			if (op[d] instanceof LetBind) {
+				return (d == 0) ? 1 : bufSize(d - 1);
+			}
+			if (op[d] instanceof Select) {
+				return bufSize(d - 1);
+			}
+			// TODO
+			return (d < FJControl.FORK_BUFFER.length) ? FJControl.FORK_BUFFER[d]
+					: FJControl.FORK_BUFFER_DEFAULT;
+		}
+
+		public String toString() {
+			return "Slice L=" + d + " " + System.identityHashCode(this);
+		}
+	}
+
+	private class FLWSink extends FJControl implements Sink {
 		final Sink s;
 		final QueryContext ctx;
 
-		public FLWSink(QueryContext ctx, Sink s) {
+		private FLWSink(QueryContext ctx, Sink s) {
 			this.ctx = ctx;
 			this.s = s;
 		}
 
 		@Override
 		public void output(Tuple[] t, int len) throws QueryException {
-			System.out.println("parallelim: " + POOL.getSize());
 			Cursor c = op[0].create(ctx, t, len);
 			c.open(ctx);
-			Slice pslice = new Slice(s, c, 0);
-			pslice.compute();
+			Slice task = new Slice(ctx, s, c, 0);
+			task.compute();
+			while ((task = task.fork) != null) {
+				task.join();
+			}
 		}
 
 		@Override
@@ -85,131 +199,15 @@ public class FLW implements Block {
 		}
 
 		@Override
-		public void fail() {
-			// TODO
+		public void fail() throws QueryException {
 		}
 
 		@Override
-		public void begin() {
+		public void begin() throws QueryException {
 		}
 
 		@Override
 		public void end() throws QueryException {
-		}
-
-		class Slice extends Task {
-			final Sink s;
-			final Cursor off;
-			final int d;
-
-			public Slice(Sink s, Cursor off, int d) {
-				this.s = s;
-				this.off = off;
-				this.d = d;
-			}
-
-			@Override
-			public void compute() throws QueryException {
-				try {
-					s.begin();
-					bind(off, d);
-					s.end();
-				} catch (QueryException e) {
-					s.fail();
-					throw e;
-				} catch (Throwable e) {
-					s.fail();
-					e.printStackTrace();
-					throw new QueryException(e, ErrorCode.BIT_DYN_INT_ERROR);
-				}
-			}
-
-			private void bind(Cursor c, int d) throws QueryException {
-				Tuple[] buf = new Tuple[bufSize(d)];
-				int len = fillBuffer(c, d, buf);
-				if (len == 0) {
-					return;
-				}
-				// process local share
-				if (d + 1 < op.length) {
-					descend(d, buf, len);
-				} else {
-					output(buf, len);
-				}
-			}
-
-			private void output(Tuple[] buf, int len) throws QueryException {
-				if (LOG)
-					log("BEGIN OUTPUT [" + buf[0] + ", " + buf[len - 1]
-							+ "] to " + s);
-				s.output(buf, len);
-				if (LOG)
-					log("END OUTPUT [" + buf[0] + ", " + buf[len - 1] + "] to "
-							+ s);
-			}
-
-			private void descend(int d, Tuple[] buf, int len)
-					throws QueryException {
-				if (LOG)
-					log("BEGIN RECURSIVE [" + buf[0] + ", " + buf[len - 1]
-							+ "]");
-				Cursor c2 = op[d + 1].create(ctx, buf, len);
-				c2.open(ctx);
-				buf = null; // allow gc
-				bind(c2, d + 1);
-				if (LOG)
-					log("END RECURSIVE [" + buf[0] + ", " + buf[len - 1] + "]");
-			}
-
-			private int fillBuffer(Cursor c, int d, Tuple[] buf)
-					throws QueryException {
-				int len = 0;
-				// load local buffer and spawn if required
-				// if (d == 0) {
-				// System.out.println(Thread.currentThread()
-				// + " START READING at level 0");
-				// }
-				while (true) {
-					Tuple t = c.next(ctx);
-					if (t != null) {
-						// if (d == 0) {
-						// System.out.println(Thread.currentThread()
-						// + " READ NEXT at level 0");
-						// }
-						buf[len++] = t;
-						if (len == buf.length) {
-							Slice fork = new Slice(s.fork(), c, d);
-							if (LOG)
-								log("Forking " + fork.hashCode() + " at level "
-										+ d + " after [" + buf[0] + ", "
-										+ buf[len - 1] + "]");
-							fork.fork();
-							break;
-						}
-					} else {
-						c.close(ctx);
-						c = null; // allow garbage collection
-						break;
-					}
-				}
-				return len;
-			}
-
-			int bufSize(int d) {
-				if (op[d] instanceof LetBind) {
-					return (d == 0) ? 1 : bufSize(d - 1);
-				}
-				if (op[d] instanceof Select) {
-					return bufSize(d - 1);
-				}
-				// TODO
-				return (d < FORK_BUFFER.length) ? FORK_BUFFER[d]
-						: FORK_BUFFER_DEFAULT;
-			}
-
-			public String toString() {
-				return "Slice at level " + d + " -> " + s;
-			}
 		}
 	}
 }

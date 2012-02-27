@@ -27,6 +27,7 @@
  */
 package org.brackit.xquery.compiler.translator;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -34,18 +35,21 @@ import org.brackit.xquery.ErrorCode;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.block.Block;
+import org.brackit.xquery.block.BlockChain;
 import org.brackit.xquery.block.Count;
 import org.brackit.xquery.block.FLW;
 import org.brackit.xquery.block.GroupBy;
 import org.brackit.xquery.block.OrderBy;
+import org.brackit.xquery.block.TableJoin;
 import org.brackit.xquery.compiler.AST;
 import org.brackit.xquery.compiler.XQ;
-import org.brackit.xquery.expr.TopDownPipeExpr;
+import org.brackit.xquery.expr.BlockExpr;
 import org.brackit.xquery.operator.ForBind;
 import org.brackit.xquery.operator.LetBind;
 import org.brackit.xquery.operator.Operator;
 import org.brackit.xquery.operator.Select;
 import org.brackit.xquery.operator.Start;
+import org.brackit.xquery.util.Cmp;
 import org.brackit.xquery.util.sort.Ordering.OrderModifier;
 import org.brackit.xquery.xdm.Expr;
 import org.brackit.xquery.xdm.type.SequenceType;
@@ -55,9 +59,9 @@ import org.brackit.xquery.xdm.type.SequenceType;
  * @author Sebastian Baechle
  * 
  */
-public class TopDownBlockCompiler extends Compiler {
+public class BlockTranslator extends Compiler {
 
-	public TopDownBlockCompiler() {
+	public BlockTranslator() {
 		super();
 	}
 
@@ -72,7 +76,7 @@ public class TopDownBlockCompiler extends Compiler {
 
 	protected Expr pipeExpr(AST node) throws QueryException {
 		int initialBindSize = table.bound().length;
-		Block[] blocks = pipe(node.getChild(0));
+		Block block = block(node.getChild(0));
 
 		// for simpler scoping, the return expression is
 		// at the right-most leaf
@@ -90,13 +94,13 @@ public class TopDownBlockCompiler extends Compiler {
 
 		boolean ordered = ctx.isOrderingModeOrdered();
 
-		return new TopDownPipeExpr(blocks, expr, ordered);
+		return new BlockExpr(block, expr, ordered);
 	}
 
-	protected Block[] pipe(AST op) throws QueryException {
-		List<Block> blocks = new LinkedList<Block>();
+	protected Block block(AST op) throws QueryException {
+		List<Block> blocks = new ArrayList<Block>();
 		anyBlock(op, blocks);
-		return blocks.toArray(new Block[blocks.size()]);
+		return new BlockChain(blocks);
 	}
 
 	protected void anyBlock(AST node, List<Block> blocks) throws QueryException {
@@ -116,8 +120,8 @@ public class TopDownBlockCompiler extends Compiler {
 			orderByBlock(node, blocks);
 			break;
 		case XQ.Join:
-			throw new QueryException(
-					ErrorCode.BIT_DYN_RT_NOT_IMPLEMENTED_YET_ERROR);
+			join(node, blocks);
+			break;
 		case XQ.GroupBy:
 			groupByBlock(node, blocks);
 			break;
@@ -272,11 +276,72 @@ public class TopDownBlockCompiler extends Compiler {
 		// the variable anyway
 		table.resolve(posVarName);
 		Count count = new Count();
-		QNm prop = (QNm) node.getProperty("check");
-		if (prop != null) {
-			table.resolve(prop, count.check());
-		}
 		blocks.add(count);
+		anyBlock(node.getLastChild(), blocks);
+	}
+
+	protected void join(AST node, List<Block> blocks) throws QueryException {
+		// get join type
+		Cmp cmp = (Cmp) node.getProperty("cmp");
+		boolean isGcmp = node.checkProperty("GCmp");
+
+		int inBoundSize = table.bound().length;
+
+		// compile right (inner) join branch
+		List<Block> rb = new ArrayList<Block>();
+		anyBlock(node.getChild(1), rb);
+		Block r = new BlockChain(rb);
+		AST tmp = node.getChild(1);
+		while (tmp.getType() != XQ.End) {
+			tmp = tmp.getLastChild();
+		}
+		Expr rightExpr = anyExpr(tmp.getChild(0));
+
+		// unbind right
+		Binding[] bound = table.bound();
+		int rBoundSize = bound.length - inBoundSize;
+		for (int i = 0; i < rBoundSize; i++) {
+			table.unbind();
+		}
+
+		// compile left (outer) join branch
+		List<Block> lb = new ArrayList<Block>();
+		anyBlock(node.getChild(0), lb);
+		Block l = new BlockChain(lb);
+		tmp = node.getChild(0);
+		while (tmp.getType() != XQ.End) {
+			tmp = tmp.getLastChild();
+		}
+		Expr leftExpr = anyExpr(tmp.getChild(0));
+
+		// re-bind right input and "resolve" if referenced
+		for (int i = 0; i < rBoundSize; i++) {
+			Binding binding = bound[inBoundSize + i];
+			table.bind(binding.getName(), binding.getType());
+			if (binding.isReferenced()) {
+				table.resolve(binding.getName());
+			}
+		}		
+
+		Block o = null;
+		AST post = node.getChild(2).getChild(0);
+		if ((post.getType() != XQ.End)) {
+			List<Block> ob = new ArrayList<Block>();
+			anyBlock(node.getChild(2), ob);
+			o = new BlockChain(ob);
+		}
+
+		boolean leftJoin = node.checkProperty("leftJoin");
+		boolean skipSort = node.checkProperty("skipSort");
+		TableJoin join = new TableJoin(cmp, isGcmp, leftJoin, skipSort, l,
+				leftExpr, r, rightExpr, o);
+
+		QNm prop = (QNm) node.getProperty("group");
+		if (prop != null) {
+			table.resolve(prop, join.group());
+		}
+
+		blocks.add(join);
 		anyBlock(node.getLastChild(), blocks);
 	}
 }

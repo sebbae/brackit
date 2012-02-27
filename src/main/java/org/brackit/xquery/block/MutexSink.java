@@ -27,8 +27,6 @@
  */
 package org.brackit.xquery.block;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
 
@@ -37,56 +35,19 @@ import org.brackit.xquery.Tuple;
  * @author Sebastian Baechle
  * 
  */
-public abstract class MutexSink implements AsyncSink {
+public abstract class MutexSink extends ConcurrentSink {
 
-	protected static class CB {
-		boolean finished;
-
-		synchronized void block() {
-			while (!finished) {
-				try {
-					wait();
-				} catch (InterruptedException e) {
-				}
-			}
-		}
-
-		synchronized void finish() {
-			finished = true;
-			notifyAll();
-		}
-	}
-	
-	private final CB cb;
 	private final Object mutex;
-	private final AtomicInteger alive;
 
 	public MutexSink() {
-		this.cb = new CB();
 		this.mutex = new Object();
-		this.alive = new AtomicInteger(1);
-	}
-
-	protected MutexSink(CB cb, Object mutex, AtomicInteger alive) {
-		this.cb = cb;
-		this.mutex = mutex;
-		this.alive = alive;
 	}
 
 	protected abstract void doOutput(Tuple[] buf, int len)
 			throws QueryException;
-	
+
 	protected abstract int doPreOutput(Tuple[] buf, int len)
 			throws QueryException;
-	
-	protected void doBegin() throws QueryException {
-	}
-
-	protected void doEnd() throws QueryException {
-	}
-
-	protected void doFail() throws QueryException {
-	}
 
 	@Override
 	public void output(Tuple[] buf, int len) throws QueryException {
@@ -94,34 +55,5 @@ public abstract class MutexSink implements AsyncSink {
 		synchronized (mutex) {
 			doOutput(buf, nlen);
 		}
-	}
-
-	@Override
-	public final Sink fork() {
-		alive.incrementAndGet();
-		return this;
-	}
-
-	@Override
-	public final void end() throws QueryException {
-		if (alive.decrementAndGet() == 0) {
-			cb.finish();
-			doEnd();
-		}
-	}
-
-	@Override
-	public final void begin() throws QueryException {
-		doBegin();
-	}
-
-	@Override
-	public final void fail() throws QueryException {
-		doFail();
-	}
-	
-	@Override
-	public final void waitForCompletion() {
-		cb.block();
 	}
 }

@@ -17,8 +17,8 @@
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
  * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
  * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
@@ -27,16 +27,42 @@
  */
 package org.brackit.xquery.block;
 
+import java.util.List;
+
 import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
 
 /**
- * 
  * @author Sebastian Baechle
  * 
  */
-public interface Block {
-	public Sink create(QueryContext ctx, Sink sink) throws QueryException;
+public class BlockChain implements Block {
 
-	public int outputWidth(int inputWidth);
+	private final Block[] blocks;
+
+	public BlockChain(List<Block> blocks) {
+		this.blocks = blocks.toArray(new Block[blocks.size()]);
+	}
+
+	public BlockChain(Block[] blocks) {
+		this.blocks = blocks;
+	}
+
+	@Override
+	public int outputWidth(int inputWidth) {
+		int s = inputWidth;
+		for (Block block : blocks) {
+			s = block.outputWidth(s);
+		}
+		return s;
+	}
+
+	@Override
+	public Sink create(QueryContext ctx, Sink sink) throws QueryException {
+		Sink s = sink;
+		for (int i = blocks.length - 1; i >= 0; i--) {
+			s = blocks[i].create(ctx, s);
+		}
+		return s;
+	}
 }

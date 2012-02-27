@@ -17,76 +17,95 @@
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
  * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
  * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.brackit.xquery.block;
-
-import java.util.concurrent.Semaphore;
+package org.brackit.xquery.expr;
 
 import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
-import org.brackit.xquery.atomic.Counter;
+import org.brackit.xquery.block.FJControl;
+import org.brackit.xquery.util.forkjoin.Task;
+import org.brackit.xquery.xdm.Expr;
+import org.brackit.xquery.xdm.Item;
+import org.brackit.xquery.xdm.Sequence;
 
 /**
  * @author Sebastian Baechle
  * 
  */
-public class Count implements Block {
+public class FJExpr implements Expr {
 
-	@Override
-	public Sink create(QueryContext ctx, Sink sink) throws QueryException {
-		return new CountSink(sink);
+	final Expr expr;
+
+	public FJExpr(Expr expr) {
+		this.expr = expr;
 	}
 
 	@Override
-	public int outputWidth(int initSize) {
-		return initSize + 1;
+	public Sequence evaluate(QueryContext ctx, Tuple tuple)
+			throws QueryException {
+		System.out.println("parallelim: " + FJControl.POOL.getSize());
+		Eval task = new Eval(ctx, tuple);
+		FJControl.POOL.submit(task);
+		task.join();
+		return task.result;
 	}
 
-	static class CountSink extends SerialSink {
-		final Sink sink;
-		Counter pos = new Counter();
+	@Override
+	public Item evaluateToItem(QueryContext ctx, Tuple tuple)
+			throws QueryException {
+		ItemEval task = new ItemEval(ctx, tuple);
+		FJControl.POOL.submit(task);
+		task.join();
+		return task.result;
+	}
 
-		CountSink(Sink sink) {
-			super(FJControl.PERMITS);
-			this.sink = sink;
-		}
+	@Override
+	public boolean isUpdating() {
+		return expr.isUpdating();
+	}
 
-		CountSink(Semaphore sem, SerialSink next, Sink sink) {
-			super(sem, next);
-			this.sink = sink;
-		}
+	@Override
+	public boolean isVacuous() {
+		return expr.isVacuous();
+	}
 
-		@Override
-		protected SerialSink doFork(Semaphore sem, SerialSink next) {
-			return new CountSink(sem, next, sink);
-		}
+	private final class Eval extends Task {
+		private final QueryContext ctx;
+		private final Tuple tuple;
+		Sequence result;
 
-		@Override
-		protected void doOutput(Tuple[] buf, int len) throws QueryException {
-			Tuple[] out = new Tuple[len];
-			for (int i = 0; i < len; i++) {
-				pos.inc();
-				out[i] = buf[i].concat(pos.asIntNumeric());
-			}
-			sink.output(out, len);
-		}
-
-		@Override
-		protected void doBegin() throws QueryException {
-			sink.begin();
+		private Eval(QueryContext ctx, Tuple tuple) {
+			this.ctx = ctx;
+			this.tuple = tuple;
 		}
 
 		@Override
-		protected void doEnd() throws QueryException {
-			sink.end();
+		public void compute() throws Throwable {
+			result = expr.evaluate(ctx, tuple);
+		}
+	}
+
+	private final class ItemEval extends Task {
+		private final QueryContext ctx;
+		private final Tuple tuple;
+		Item result;
+
+		private ItemEval(QueryContext ctx, Tuple tuple) {
+			this.ctx = ctx;
+			this.tuple = tuple;
+		}
+
+		@Override
+		public void compute() throws Throwable {
+			result = expr.evaluateToItem(ctx, tuple);
 		}
 	}
 }

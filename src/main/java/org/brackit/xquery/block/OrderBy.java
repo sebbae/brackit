@@ -51,6 +51,11 @@ public class OrderBy implements Block {
 	}
 
 	@Override
+	public int outputWidth(int initSize) {
+		return initSize;
+	}
+	
+	@Override
 	public Sink create(QueryContext ctx, Sink sink) throws QueryException {
 		return new OrderBySink(sink, ctx);
 	}
