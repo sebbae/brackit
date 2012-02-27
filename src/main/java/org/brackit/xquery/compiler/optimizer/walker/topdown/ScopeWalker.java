@@ -893,6 +893,9 @@ public abstract class ScopeWalker extends Walker {
 	 * create a sorted and duplicate-free array of accessed scopes
 	 */
 	protected Scope[] sortScopes(VarRef varRefs) {
+		if (varRefs == null) {
+			return new Scope[0];
+		}
 		int cnt = 0;
 		for (VarRef ref = varRefs; ref != null; ref = ref.next) {
 			cnt++;
