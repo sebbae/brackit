@@ -31,13 +31,12 @@ import org.brackit.xquery.atomic.Bool;
 import org.brackit.xquery.compiler.AST;
 import org.brackit.xquery.compiler.XQ;
 import org.brackit.xquery.compiler.optimizer.walker.Walker;
-import org.brackit.xquery.util.Cmp;
 
 /**
  * @author Sebastian Baechle
  * 
  */
-public class LeftJoinLifting extends Walker {
+public class LeftJoinRemoval extends Walker {
 
 	@Override
 	protected AST visit(AST join) {
@@ -47,54 +46,22 @@ public class LeftJoinLifting extends Walker {
 
 		AST leftIn = join.getChild(0).getChild(0);
 		AST rightIn = join.getChild(1).getChild(0);
-		if ((rightIn.getType() != XQ.Join)
-				|| (join.getProperty("cmp") != Cmp.eq)
+		if ((leftIn.getType() != XQ.Join)
+				|| (!leftIn.checkProperty("leftJoin"))
 				|| (!constTrueJoinKey(findEnd(leftIn).getChild(0)))
-				|| (!constTrueJoinKey(findEnd(rightIn.getChild(3)).getChild(0)))) {
+				|| (!constTrueJoinKey(findEnd(rightIn).getChild(0)))
+				|| (join.getChild(2).getChild(0).getType() != XQ.End)) {
 			return join;
 		}
 
-		// use as new left in a concatenation of the current
-		// left input and the converted join; the join
-		// is transformed to a left join where the output
-		// is simply the "TRUE" join key and where the post-join
-		// output is a concatenation of the original post, the
-		// original output and the post pipeline of the current join
-		AST newLeftIn = new AST(XQ.Start);
-		newLeftIn.addChild(leftIn.copyTree());
-		AST newLeftInEnd = findEnd(newLeftIn);
-		AST ljoin = rightIn.copy();
-		ljoin.setProperty("leftJoin", Boolean.TRUE);
-		ljoin.addChild(rightIn.getChild(0).copyTree());
-		ljoin.addChild(rightIn.getChild(1).copyTree());
-		ljoin.addChild(rightIn.getChild(3).copyTree());
-		ljoin.addChild(emptyJoinInput());
-		// concat join
-		newLeftInEnd.getParent().replaceChild(newLeftInEnd.getChildIndex(),
-				ljoin);
-		// replace end and join key from post pipeline
-		// with post pipeline from current join
-		newLeftInEnd = findEnd(ljoin.getChild(2));
-		newLeftInEnd.getParent().replaceChild(newLeftInEnd.getChildIndex(),
-				join.getChild(2).getChild(0).copyTree());
-
-		// replace the left input with the assembled join
-		// and replace the right input and the post-join
-		// with empty pipelines 
-		join.replaceChild(0, newLeftIn);
-		join.replaceChild(1, emptyJoinInput());
-		join.getChild(2).replaceChild(0, new AST(XQ.End));
-
-		snapshot();
-		return join;
-	}
-
-	private AST emptyJoinInput() {
-		AST in = new AST(XQ.Start);
-		AST end = new AST(XQ.End);
-		end.addChild(new AST(XQ.Bool, Bool.TRUE));
-		in.addChild(end);
-		return in;
+		AST liftedJoin = leftIn.copy();
+		liftedJoin.addChild(leftIn.getChild(0).copyTree());
+		liftedJoin.addChild(leftIn.getChild(1).copyTree());
+		liftedJoin.addChild(leftIn.getChild(2).copyTree());
+		liftedJoin.addChild(join.getChild(3).copyTree());
+		AST parent = join.getParent();
+		parent.replaceChild(join.getChildIndex(), liftedJoin);
+		return parent;
 	}
 
 	private AST findEnd(AST node) {
