@@ -54,7 +54,7 @@ public class OrderBy implements Block {
 	public int outputWidth(int initSize) {
 		return initSize;
 	}
-	
+
 	@Override
 	public Sink create(QueryContext ctx, Sink sink) throws QueryException {
 		return new OrderBySink(sink, ctx);
@@ -95,6 +95,7 @@ public class OrderBy implements Block {
 		protected void doEnd() throws QueryException {
 			Stream<? extends Tuple> s = sort.sorted();
 			try {
+				sink.begin();
 				Tuple t;
 				int bufSize = 20;
 				Tuple[] buf = new Tuple[bufSize];
@@ -111,8 +112,6 @@ public class OrderBy implements Block {
 					sink.output(buf, len);
 				}
 				sink.end();
-			} catch (QueryException e) {
-				sink.fail();
 			} finally {
 				sort.clear();
 				sort = null;
@@ -122,6 +121,7 @@ public class OrderBy implements Block {
 
 		@Override
 		protected void doFail() throws QueryException {
+			sink.fail();
 			if (sort != null) {
 				sort.clear();
 				sort = null;

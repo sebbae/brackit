@@ -27,21 +27,23 @@
  */
 package org.brackit.xquery.block;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.brackit.xquery.QueryException;
 
 /**
+ * A {@link ConcurrentSink} creates a fan-in, i.e., {@link #fork()} returns this
+ * sink again but the sink keeps track how many "virtual" sinks have been forked
+ * and are active.
+ * 
  * @author Sebastian Baechle
  * 
  */
 public abstract class ConcurrentSink implements Sink {
 
-	protected final AtomicInteger alive;
-
-	public ConcurrentSink() {
-		this.alive = new AtomicInteger(1);
-	}
+	protected final AtomicBoolean begin = new AtomicBoolean(false);
+	protected final AtomicInteger alive = new AtomicInteger(1);
 
 	protected void doBegin() throws QueryException {
 	}
@@ -67,7 +69,9 @@ public abstract class ConcurrentSink implements Sink {
 
 	@Override
 	public final void begin() throws QueryException {
-		doBegin();
+		if ((!begin.get()) && (begin.compareAndSet(false, true))) {
+			doBegin();
+		}
 	}
 
 	@Override

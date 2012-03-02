@@ -59,14 +59,14 @@ public class Count implements Block {
 			this.sink = sink;
 		}
 
-		CountSink(Semaphore sem, SerialSink next, Sink sink) {
-			super(sem, next);
+		CountSink(Semaphore sem, Sink sink) {
+			super(sem);
 			this.sink = sink;
 		}
 
 		@Override
-		protected SerialSink doFork(Semaphore sem, SerialSink next) {
-			return new CountSink(sem, next, sink);
+		protected SerialSink doFork() {
+			return new CountSink(sem, sink);
 		}
 
 		@Override

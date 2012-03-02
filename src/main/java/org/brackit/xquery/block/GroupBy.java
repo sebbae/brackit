@@ -51,15 +51,15 @@ public class GroupBy implements Block {
 			this.grp = new Grouping(groupSpecs, onlyLast);
 		}
 
-		private GroupBySink(Semaphore sem, SerialSink next, Sink sink, Grouping grp) {
-			super(sem, next);
+		private GroupBySink(Semaphore sem, Sink sink, Grouping grp) {
+			super(sem);
 			this.sink = sink;
 			this.grp = grp;
 		}
 
 		@Override
-		protected SerialSink doFork(Semaphore sem, SerialSink next) {
-			return new GroupBySink(sem, next, sink, grp);
+		protected SerialSink doFork() {
+			return new GroupBySink(sem, sink, grp);
 		}
 
 		@Override

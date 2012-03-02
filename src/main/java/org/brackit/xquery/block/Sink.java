@@ -31,18 +31,60 @@ import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
 
 /**
+ * <p>
+ * A sink is an output channel for computations, i.e., tuples.
+ * </p>
+ * <p>
+ * Clients must use sinks only according to the protocol:
+ * <em>fork()* -> begin() -> output()* -> (end() | fail())</em>.
+ * </p>
+ * <p>
+ * Logically, each sink is used single-threaded, i.e., callers 
+ * must not concurrently access the same "logical" sink. However,
+ * logically distinct sinks, may be called concurrently. If a particular
+ * implementation does not fork by returning a distinct object, 
+ * that means that it must take care of concurrent access by itself. 
+ * </p>
+ * <p>
+ * A forked sink is considered to be independent of the base sink and the above
+ * protocol must be obeyed for all forked sinks, too.
+ * </p>
+ * <p>
+ * Depending on the type of the sink, a fork may either be really a distinct
+ * object (i.e. the sink creates a fan-out) or it may be the same (i.e., the
+ * sink creates a fan-in). Since all callers must follow the sink protocol, an
+ * implementations must ensure to behave in every case correctly.
+ * </p>
+ * 
  * @author Sebastian Baechle
- *
+ * 
  */
 public interface Sink {
+	/**
+	 * Output, i.e., the given tuple buffer.
+	 */
 	public void output(Tuple[] buf, int len) throws QueryException;
-	
+
+	/**
+	 * Create a fork of the current sink.
+	 */
 	public Sink fork();
-	
+
+	/**
+	 * Notify the sink that no further output operations will be called. This
+	 * does not affect forked sinks.
+	 */
 	public void end() throws QueryException;
 
+	/**
+	 * Notify the sink that
+	 */
 	public void begin() throws QueryException;
 
+	/**
+	 * Notify the sink that an error happened and that no further output
+	 * operations will be called. This does not affect forked sinks.
+	 */
 	public void fail() throws QueryException;
-	
+
 }

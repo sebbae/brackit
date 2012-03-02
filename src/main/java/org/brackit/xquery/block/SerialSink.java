@@ -27,295 +27,78 @@
  */
 package org.brackit.xquery.block;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.concurrent.Semaphore;
 
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
-import org.brackit.xquery.util.forkjoin.Deque;
-import org.brackit.xquery.util.forkjoin.Task;
-import org.brackit.xquery.util.forkjoin.Worker;
 
 /**
- * 
+ * A {@link SerialSink} creates a fan-in, i.e., all forked
+ * sinks are chained so that (concurrent) output to all
+ * forks is serialized and the order is preserved.
+ *   
  * @author Sebastian Baechle
  *
  */
-public abstract class SerialSink implements Sink {
-
-	private static final int NO_TOKEN = 0;
-	private static final int WAIT_TOKEN = 1;
-	private static final int HAS_TOKEN = 2;
-	private static final int FAILED = 3;
-	private static final boolean BOUNDED_FORWARD = true;
-	private static final boolean ALWAYS_BACKWARD = false;
-	private static final int START_STATE = NO_TOKEN;
+public abstract class SerialSink extends ChainedSink {
 
 	final Semaphore sem;
-	SerialSink next;
-	Tuple[] head;
-	int size;
-	volatile int state;
-	volatile Deque<Task> deposit;
+	Tuple[] pending;
+	int pLen;
 
 	public SerialSink(int permits) {
-		this.state = HAS_TOKEN;
 		this.sem = new Semaphore(permits);
 	}
 
-	protected SerialSink(Semaphore sem, SerialSink next) {
-		this.state = START_STATE;
+	protected SerialSink(Semaphore sem) {
 		this.sem = sem;
-		this.next = next;
 	}
-
-	public final SerialSink fork() {
-		return (next = doFork(sem, next));
-	}
-
-	protected abstract SerialSink doFork(Semaphore sem, SerialSink next);
 
 	protected abstract void doOutput(Tuple[] buf, int len)
 			throws QueryException;
 
-	protected void doBegin() throws QueryException {
-	}
+	@Override
+	protected abstract ChainedSink doFork();
 
-	protected void doEnd() throws QueryException {
-	}
-
-	protected void doFail() throws QueryException {
+	@Override
+	protected void processPending() throws QueryException {
+		doOutput(pending, pLen);
+		pending = null;
 	}
 
 	@Override
-	public final void output(Tuple[] buf, int len) throws QueryException {
-		// stats.get().out++;
-		if (state == HAS_TOKEN) {
-			outputQueued();
-			doOutput(buf, len);
+	protected boolean hasPending() {
+		return pending != null;
+	}
+
+	@Override
+	protected void clearPending() {
+		pending = null;
+	}
+
+	@Override
+	protected boolean yield() {
+		return !sem.tryAcquire(pLen);
+	}
+
+	@Override
+	protected void unyield() {
+		sem.release(pLen);
+	}
+
+	@Override
+	protected void setPending(Tuple[] buf, int len) throws QueryException {
+		if (pending == null) {
+			pending = buf;
+			pLen = len;
 		} else {
-			// locally queue output
-			// System.out.println(Thread.currentThread() + " enqueue " + this);
-			enqueue(buf, len);
-		}
-	}
-
-	public final void end() throws QueryException {
-		// System.out.println("END " + this);
-		// Stats s = stats.get();
-		// s.end++;
-
-		if (state == HAS_TOKEN) {
-			outputQueued();
-			promoteToken();
-			return;
-		}
-
-		// hold reference to work queue
-		Worker worker = (Worker) Thread.currentThread();
-		Deque<Task> queue = worker.getQueue();
-		deposit = queue;
-
-		// attempt to put predecessor in charge of doing the output
-		if (compareAndSet(NO_TOKEN, WAIT_TOKEN)) {
-			// System.out.println(Thread.currentThread() +
-			// " passed end() from " + this + " to predecessor");
-			// System.out.println(Thread.currentThread() + " passed " +
-			// head);
-			// s.passed++;
-			if (head == null) {
-				if (!compareAndSet(queue, null)) {
-					worker.dropQueue();
-				}
-				return;
+			int newPLen = pLen + len;
+			if (newPLen > pending.length) {
+				pending = Arrays.copyOfRange(pending, 0, newPLen);
 			}
-			if ((ALWAYS_BACKWARD)
-					|| ((BOUNDED_FORWARD) && ((!sem.tryAcquire(size)) || (!compareAndSet(
-							queue, null))))) {
-				// drop local queue
-				worker.dropQueue();
-			}
-			return;
-		}
-
-		if (state == HAS_TOKEN) {
-			outputQueued();
-			promoteToken();
-			doEnd();
-		} else {
-			dropForked();
-			clearQueued();
-			promoteFailure();
-		}
-	}
-
-	public final void begin() throws QueryException {
-		doBegin();
-	}
-
-	public final void fail() throws QueryException {
-		state = FAILED;
-		sem.drainPermits();
-		promoteFailure();
-		doFail();
-	}
-
-	private void promoteToken() throws QueryException {
-		// process local queues of finished successors
-		SerialSink n = next;
-		next = null;
-		int run = 0;
-		while ((n != null) && (!n.compareAndSet(NO_TOKEN, HAS_TOKEN))) {
-			if (n.state == WAIT_TOKEN) {
-				run++;
-				takeover(n);
-				n = n.next;
-			} else {
-				dropForked();
-				n.promoteFailure();
-				break;
-			}
-		}
-		if (run > 0) {
-			// Stats s = stats.get();
-			// s.minRun = Math.min(s.minRun, run);
-			// s.maxRun = Math.max(s.maxRun, run);
-		}
-		if (n == null) {
-			doEnd();
-		}
-	}
-
-	private void dropForked() {
-		Deque<Task> deposit = ((Worker) Thread.currentThread()).getQueue();
-		// TODO cleanup tasks
-	}
-
-	private void promoteFailure() throws QueryException {
-		SerialSink n = next;
-		// forward promote failure to forked sinks
-		while ((n != null) && (!n.compareAndSet(NO_TOKEN, FAILED))) {
-			if (n.state == FAILED) {
-				break;
-			}
-			n.clearQueued(); // allow gc
-			// synchronized (n)
-			{
-				if (n.deposit != null) {
-					// TODO cleanup tasks
-				}
-			}
-			doFail();
-			n = n.next;
-		}
-		if (n == null) {
-			// notify external caller?
-		}
-	}
-
-	private void takeover(SerialSink n) throws QueryException {
-		// System.out.println(Thread.currentThread() +
-		// " process end() from " + this + " for " + n);
-		n.outputQueued();
-		Deque<Task> queue = n.deposit;
-		if ((queue != null) && (n.compareAndSet(queue, null))) {
-			sem.release(n.size);
-			((Worker) Thread.currentThread()).adopt(queue);
-		}
-		// stats.get().takeover++;
-	}
-
-	private void enqueue(Tuple[] buf, int len) {
-		this.head = buf;
-		this.size = len;
-	}
-
-	private void clearQueued() {
-		head = null;
-	}
-
-	private void outputQueued() throws QueryException {
-		if (head != null) {
-			doOutput(head, size);
-		}
-		// allow garbage collection
-		head = null;
-	}
-
-	public String toString() {
-		return "[" + String.valueOf(me()) + "]";
-	}
-
-	private String chain() {
-		String s = String.valueOf(me());
-		if (state == HAS_TOKEN) {
-			s += "*";
-		}
-		SerialSink n = next;
-		while (n != null) {
-			s += "->" + n.me();
-			if (n.state == HAS_TOKEN) {
-				s += "*";
-			}
-			n = n.next;
-		}
-		return s;
-	}
-
-	private int me() {
-		return System.identityHashCode(this);
-	}
-
-	private boolean compareAndSet(int expected, int set) {
-		synchronized (this) {
-			if (state == expected) {
-				state = set;
-				return true;
-			}
-			return false;
-		}
-	}
-
-	private boolean compareAndSet(Deque<Task> expected, Deque<Task> set) {
-		synchronized (this) {
-			if (deposit == expected) {
-				deposit = set;
-				return true;
-			}
-			return false;
-		}
-	}
-
-	// static AtomicInteger meCnt = new AtomicInteger();
-	// final int me = meCnt.incrementAndGet();
-
-	public static ArrayList<Stats> statlist = new ArrayList<Stats>();
-	static final ThreadLocal<Stats> stats = new ThreadLocal<Stats>() {
-		@Override
-		protected Stats initialValue() {
-			Stats s = new Stats();
-			s.t = Thread.currentThread();
-			synchronized (this) {
-				statlist.add(s);
-			}
-			return s;
-		}
-	};
-
-	public static class Stats {
-		public Thread t;
-		long tupleout;
-		int out;
-		int end;
-		int passed;
-		int takeover;
-		int minRun = Integer.MAX_VALUE;
-		int maxRun = Integer.MIN_VALUE;
-
-		public String toString() {
-			return "out=" + out + " tuples=" + tupleout + " end=" + end
-					+ " passed=" + passed + " takeover=" + takeover
-					+ " minRun=" + minRun + " maxRun=" + maxRun;
+			System.arraycopy(buf, 0, pending, pLen, len);
+			pLen = newPLen;
 		}
 	}
 }

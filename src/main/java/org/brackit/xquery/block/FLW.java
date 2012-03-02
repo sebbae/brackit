@@ -63,10 +63,6 @@ public class FLW implements Block {
 		return new FLWSink(ctx, sink);
 	}
 
-	static void log(String msg) {
-		System.out.println(Thread.currentThread() + ": " + msg);
-	}
-
 	private static class Buf {
 		Tuple[] b;
 		int len;
@@ -96,20 +92,15 @@ public class FLW implements Block {
 		}
 
 		public void compute() throws QueryException {
-			try {
-				s.begin();
-				fork = bind(off, d);
-				s.end();
-			} catch (QueryException e) {
-				s.fail();
-				throw e;
-			}
+			fork = bind(off, d);
 		}
 
 		private Slice bind(Cursor c, int d) throws QueryException {
 			Buf buf = new Buf(bufSize(d));
 			Slice fork = fillBuffer(c, d, buf);
 			if (buf.len == 0) {
+				s.begin();
+				s.end();
 				return null;
 			}
 			// process local share
@@ -122,7 +113,14 @@ public class FLW implements Block {
 		}
 
 		private void output(Buf buf) throws QueryException {
-			s.output(buf.b, buf.len);
+			s.begin();
+			try {
+				s.output(buf.b, buf.len);
+			} catch (QueryException e) {
+				s.fail();
+				throw e;
+			}
+			s.end();
 		}
 
 		private void descend(int d, Buf buf) throws QueryException {
@@ -130,8 +128,9 @@ public class FLW implements Block {
 			c2.open(ctx);
 			buf = null; // allow gc
 			Slice fork = bind(c2, d + 1);
-			if (fork != null) {
+			while (fork != null) {
 				fork.join();
+				fork = fork.fork;
 			}
 		}
 
@@ -141,7 +140,7 @@ public class FLW implements Block {
 				Tuple t = c.next(ctx);
 				if (t != null) {
 					if (!buf.add(t)) {
-						Slice fork = new Slice(ctx, s.fork(), c, d);						
+						Slice fork = new Slice(ctx, s.fork(), c, d);
 						fork.fork();
 						return fork;
 					}
@@ -174,7 +173,7 @@ public class FLW implements Block {
 	}
 
 	private class FLWSink extends FJControl implements Sink {
-		final Sink s;
+		Sink s;
 		final QueryContext ctx;
 
 		private FLWSink(QueryContext ctx, Sink s) {
@@ -186,10 +185,15 @@ public class FLW implements Block {
 		public void output(Tuple[] t, int len) throws QueryException {
 			Cursor c = op[0].create(ctx, t, len);
 			c.open(ctx);
-			Slice task = new Slice(ctx, s, c, 0);
+			// fork sink for future output calls
+			Sink ss = s;
+			s = s.fork();
+			Slice task = new Slice(ctx, ss, c, 0);
 			task.compute();
-			while ((task = task.fork) != null) {
-				task.join();
+			Slice fork = task.fork;
+			while (fork != null) {
+				fork.join();
+				fork = fork.fork;
 			}
 		}
 
@@ -200,14 +204,19 @@ public class FLW implements Block {
 
 		@Override
 		public void fail() throws QueryException {
+			s.begin();
+			s.fail();
 		}
 
 		@Override
 		public void begin() throws QueryException {
+			// do nothing
 		}
 
 		@Override
 		public void end() throws QueryException {
+			s.begin();
+			s.end();
 		}
 	}
 }
