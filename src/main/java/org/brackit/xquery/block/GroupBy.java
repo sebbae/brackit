@@ -80,12 +80,12 @@ public class GroupBy implements Block {
 		}
 
 		@Override
-		protected void doBegin() throws QueryException {
+		protected void doFirstBegin() throws QueryException {
 			sink.begin();
 		}
 
 		@Override
-		protected void doEnd() throws QueryException {
+		protected void doFinalEnd() throws QueryException {
 			if (grp.getSize() > 0) {
 				outputGroup();
 			}
