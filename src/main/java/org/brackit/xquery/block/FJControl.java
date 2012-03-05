@@ -32,15 +32,23 @@ import org.brackit.xquery.util.forkjoin.WorkerFactory;
 
 /**
  * @author Sebastian Baechle
- *
+ * 
  */
 public class FJControl {
 
-	static final int POOL_SIZE = 1;
+	public static int POOL_SIZE = 1;
 	public static WorkerFactory FACTORY = new WorkerFactory();
 	public static Pool POOL = new Pool(POOL_SIZE, FACTORY);
 	public static int[] FORK_BUFFER = { 1, 100, 100, 100 };
 	public static int FORK_BUFFER_DEFAULT = 100;
 	public static int PERMITS = 30000;
+
+	public static void resizePool(int newSize) {
+		if (newSize <= 0) {
+			throw new IllegalArgumentException("Illegal pool size: " + newSize);
+		}
+		POOL_SIZE = newSize;
+		POOL = new Pool(POOL_SIZE, FACTORY);
+	}
 
 }

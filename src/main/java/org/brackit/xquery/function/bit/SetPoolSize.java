@@ -36,7 +36,6 @@ import org.brackit.xquery.block.FJControl;
 import org.brackit.xquery.function.AbstractFunction;
 import org.brackit.xquery.module.Namespaces;
 import org.brackit.xquery.module.StaticContext;
-import org.brackit.xquery.util.forkjoin.Pool;
 import org.brackit.xquery.xdm.Sequence;
 import org.brackit.xquery.xdm.Signature;
 import org.brackit.xquery.xdm.type.AnyItemType;
@@ -65,9 +64,10 @@ public class SetPoolSize extends AbstractFunction {
 			Sequence[] args) throws QueryException {
 		int s = ((IntNumeric) args[0]).intValue();
 		if (s <= 0) {
-			throw new QueryException(ErrorCode.BIT_DYN_INT_ERROR, "Illegal pool size: %s", s);
+			throw new QueryException(ErrorCode.BIT_DYN_INT_ERROR,
+					"Illegal pool size: %s", s);
 		}
-		FJControl.POOL = new Pool(s, FJControl.FACTORY);
+		FJControl.resizePool(s);
 		return null;
 	}
 }
