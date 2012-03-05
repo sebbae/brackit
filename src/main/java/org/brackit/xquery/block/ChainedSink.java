@@ -226,7 +226,9 @@ public class ChainedSink implements Sink {
 	}
 
 	private void takeover(ChainedSink n) throws QueryException {
-		n.processPending();
+		if (n.hasPending()) {
+			n.processPending();
+		}
 		Deque<Task> queue = n.deposit;
 		if ((queue != null) && (n.compareAndSet(queue, null))) {
 			n.unyield();
