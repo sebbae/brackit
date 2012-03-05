@@ -194,6 +194,7 @@ public class ChainedSink implements Sink {
 		next = null;
 		while ((n != null) && (!n.compareAndSet(NO_TOKEN, HAS_TOKEN))) {
 			if (n.state == WAIT_TOKEN) {
+				n.state = HAS_TOKEN;
 				takeover(n);
 				n = n.next;
 			} else {
@@ -234,6 +235,7 @@ public class ChainedSink implements Sink {
 			n.unyield();
 			((Worker) Thread.currentThread()).adopt(queue);
 		}
+		n.doEnd();
 	}
 
 	private boolean compareAndSet(int expected, int set) {
