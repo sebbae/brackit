@@ -148,7 +148,7 @@ public class Compiler implements Translator {
 	}
 
 	public Expr expression(Module module, StaticContext ctx, AST expr,
-			boolean allowUpdate) throws QueryException {
+			boolean allowUpdate, boolean isBody) throws QueryException {
 		this.table = new VariableTable(module);
 		this.ctx = ctx;
 		Expr e = expr(expr, !allowUpdate);
@@ -1019,8 +1019,7 @@ public class Compiler implements Translator {
 			bindSize[i] = sizeBinding.isReferenced();
 		}
 
-		return new StepExpr(axis, test, in, filter, bindItem, bindPos,
-				bindSize);
+		return new StepExpr(axis, test, in, filter, bindItem, bindPos, bindSize);
 	}
 
 	protected Accessor axis(AST node) throws QueryException {

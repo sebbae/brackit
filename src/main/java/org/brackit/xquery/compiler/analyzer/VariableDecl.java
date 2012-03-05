@@ -54,6 +54,6 @@ public class VariableDecl extends ForwardDeclaration {
 	@Override
 	public Target process() throws QueryException {
 		expr(defaultValue);
-		return new Target(module, sctx, defaultValue, var, false);
+		return new Target(module, sctx, defaultValue, var, false, false);
 	}
 }

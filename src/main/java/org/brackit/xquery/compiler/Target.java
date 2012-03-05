@@ -47,22 +47,26 @@ public class Target {
 	protected final StaticContext sctx;
 	protected final Unit unit;
 	protected final boolean allowUpdate;
+	protected final boolean isBody;
 	protected AST ast;
 
-	public Target(Module module, StaticContext sctx, AST ast, Unit unit, boolean allowUpdate) {
+	public Target(Module module, StaticContext sctx, AST ast, Unit unit,
+			boolean allowUpdate, boolean isBody) {
 		this.module = module;
 		this.sctx = sctx;
 		this.ast = ast;
 		this.unit = unit;
 		this.allowUpdate = allowUpdate;
+		this.isBody = isBody;
 	}
-	
+
 	public void optimize(Optimizer optimizer) throws QueryException {
 		ast = optimizer.optimize(sctx, ast);
 	}
-	
+
 	public void translate(Translator translator) throws QueryException {
-		Expr expr = translator.expression(module, sctx, ast, allowUpdate);
+		Expr expr = translator.expression(module, sctx, ast, allowUpdate,
+				isBody);
 		unit.setExpr(expr);
 	}
 

@@ -48,6 +48,6 @@ public class BodyDecl extends ForwardDeclaration {
 	@Override
 	public Target process() throws QueryException {
 		new ExprAnalyzer(module).expr(body);
-		return new Target(module, sctx, body, (MainModule) module, true);
+		return new Target(module, sctx, body, (MainModule) module, true, true);
 	}
 }

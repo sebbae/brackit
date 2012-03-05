@@ -58,7 +58,7 @@ public class FunctionDecl extends ForwardDeclaration {
 			params[i] = bind(params[i]);
 		}
 		functionBody(body);
-		return new Target(module, sctx, body, unit, udf.isUpdating()) {
+		return new Target(module, sctx, body, unit, udf.isUpdating(), false) {
 
 			@Override
 			public void translate(Translator translator) throws QueryException {

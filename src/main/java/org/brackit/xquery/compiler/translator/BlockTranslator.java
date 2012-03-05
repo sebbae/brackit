@@ -44,6 +44,9 @@ import org.brackit.xquery.block.TableJoin;
 import org.brackit.xquery.compiler.AST;
 import org.brackit.xquery.compiler.XQ;
 import org.brackit.xquery.expr.BlockExpr;
+import org.brackit.xquery.expr.FJExpr;
+import org.brackit.xquery.module.Module;
+import org.brackit.xquery.module.StaticContext;
 import org.brackit.xquery.operator.ForBind;
 import org.brackit.xquery.operator.LetBind;
 import org.brackit.xquery.operator.Operator;
@@ -63,6 +66,13 @@ public class BlockTranslator extends Compiler {
 
 	public BlockTranslator() {
 		super();
+	}
+
+	@Override
+	public Expr expression(Module module, StaticContext ctx, AST expr,
+			boolean allowUpdate, boolean isBody) throws QueryException {
+		Expr e = super.expression(module, ctx, expr, allowUpdate, isBody);
+		return (isBody) ? new FJExpr(e) : e;
 	}
 
 	@Override
@@ -321,7 +331,7 @@ public class BlockTranslator extends Compiler {
 			if (binding.isReferenced()) {
 				table.resolve(binding.getName());
 			}
-		}		
+		}
 
 		Block o = null;
 		AST post = node.getChild(2).getChild(0);
