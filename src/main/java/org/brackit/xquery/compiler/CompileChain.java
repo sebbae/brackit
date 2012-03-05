@@ -27,15 +27,19 @@
  */
 package org.brackit.xquery.compiler;
 
+import java.util.Map;
+
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.XQuery;
 import org.brackit.xquery.atomic.AnyURI;
 import org.brackit.xquery.atomic.QNm;
+import org.brackit.xquery.atomic.Str;
 import org.brackit.xquery.compiler.analyzer.Analyzer;
-import org.brackit.xquery.compiler.optimizer.DefaultOptimizer;
 import org.brackit.xquery.compiler.optimizer.Optimizer;
+import org.brackit.xquery.compiler.optimizer.TopDownOptimizer;
 import org.brackit.xquery.compiler.parser.XQParser;
-import org.brackit.xquery.compiler.translator.PipelineCompiler;
+import org.brackit.xquery.compiler.translator.BlockTranslator;
+import org.brackit.xquery.compiler.translator.TopDownTranslator;
 import org.brackit.xquery.compiler.translator.Translator;
 import org.brackit.xquery.function.bit.Every;
 import org.brackit.xquery.function.bit.GetForkBuffer;
@@ -69,6 +73,9 @@ import org.brackit.xquery.xdm.type.SequenceType;
  */
 public class CompileChain {
 
+	public static final QNm PUSH_EVAL_OPTION = new QNm(Namespaces.BIT_NSURI,
+			Namespaces.BIT_PREFIX, "push-evaluation");
+
 	public static final Every BIT_EVERY_FUNC = new Every(new QNm(
 			Namespaces.XML_NSURI, Namespaces.BIT_PREFIX, "every"),
 			new Signature(new SequenceType(AtomicType.BOOL, Cardinality.One),
@@ -101,29 +108,35 @@ public class CompileChain {
 		Functions.predefine(new GetSerializerPermits());
 		Functions.predefine(new SetSerializerPermits());
 	}
-	
+
 	final AnyURI baseURI;
-	
+
 	public CompileChain() {
 		baseURI = null;
 	}
-	
+
 	public CompileChain(AnyURI baseURI) {
 		this.baseURI = baseURI;
 	}
 
-	protected Optimizer getOptimizer() {
-		return new DefaultOptimizer();
+	protected Optimizer getOptimizer(Map<QNm, Str> options) {
+		Str opt = options.get(PUSH_EVAL_OPTION);
+		boolean push = ((opt != null) && Boolean
+				.parseBoolean(opt.stringValue()));
+		return new TopDownOptimizer(push);
 	}
 
-	protected Translator getTranslator() {
-		return new PipelineCompiler();
+	protected Translator getTranslator(Map<QNm, Str> options) {
+		Str opt = options.get(PUSH_EVAL_OPTION);
+		boolean push = ((opt != null) && Boolean
+				.parseBoolean(opt.stringValue()));
+		return (push) ? new BlockTranslator() : new TopDownTranslator();
 	}
 
 	protected ModuleResolver getModuleResolver() {
 		return new BaseResolver();
 	}
-	
+
 	protected AST parse(String query) throws QueryException {
 		return new XQParser(query).parse();
 	}
@@ -138,23 +151,24 @@ public class CompileChain {
 		if (XQuery.DEBUG) {
 			DotUtil.drawDotToFile(xquery.dot(), XQuery.DEBUG_DIR, "parsed");
 		}
+		Module module = analyzer.getModules().get(0);
 		// optimize all targets of all modules
 		for (Target t : analyzer.getTargets()) {
-			t.optimize(getOptimizer());
+			t.optimize(getOptimizer(module.getOptions()));
 		}
 		// translate all targets of all modules
 		for (Target t : analyzer.getTargets()) {
-			t.translate(getTranslator());
+			t.translate(getTranslator(module.getOptions()));
 		}
 		// everything went fine - add compiled modules to library
-		for (Module module : analyzer.getModules()) {
-			if (module.getTargetNS() != null) {
-				resolver.register(module.getTargetNS(), module);
+		for (Module m : analyzer.getModules()) {
+			if (m.getTargetNS() != null) {
+				resolver.register(m.getTargetNS(), m);
 			}
 		}
 		if (XQuery.DEBUG) {
 			DotUtil.drawDotToFile(xquery.dot(), XQuery.DEBUG_DIR, "xquery");
 		}
-		return analyzer.getModules().get(0);
+		return module;
 	}
 }

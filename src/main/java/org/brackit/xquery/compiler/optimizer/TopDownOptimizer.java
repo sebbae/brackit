@@ -54,11 +54,11 @@ public class TopDownOptimizer implements Optimizer {
 
 	private List<Stage> stages = new ArrayList<Stage>();
 
-	public TopDownOptimizer() {
+	public TopDownOptimizer(boolean push) {
 		stages.add(new Simplification());
 		stages.add(new Pipelining());
 		stages.add(new Reordering());
-		stages.add(new JoinRecognition());
+		stages.add(new JoinRecognition(push));
 		stages.add(new Unnest());
 		stages.add(new Finalize());
 	}
@@ -105,13 +105,21 @@ public class TopDownOptimizer implements Optimizer {
 	}
 
 	private static class JoinRecognition implements Stage {
+		final boolean push;
+
+		public JoinRecognition(boolean push) {
+			this.push = push;
+		}
+
 		public AST rewrite(StaticContext sctx, AST ast) throws QueryException {
 			ast = new JoinRewriter().walk(ast);
 			ast = new LetBindToLeftJoin().walk(ast);
 			ast = new LeftJoinLifting().walk(ast);
 			ast = new LeftJoinRemoval().walk(ast);
 			ast = new JoinGroupDemarcation().walk(ast);
-			ast = new PullEvaluation().walk(ast);
+			if (!push) {
+				ast = new PullEvaluation().walk(ast);
+			}
 			// ast = new JoinTree().walk(ast);
 			// ast = new JoinTree().walk(ast);
 			// ast = new JoinTree().walk(ast);
