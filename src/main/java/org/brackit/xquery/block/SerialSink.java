@@ -34,21 +34,22 @@ import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
 
 /**
- * A {@link SerialSink} creates a fan-in, i.e., all forked
- * sinks are chained so that (concurrent) output to all
- * forks is serialized and the order is preserved.
- *   
+ * A {@link SerialSink} creates a fan-in, i.e., all forked sinks are chained so
+ * that (concurrent) output to all forks is serialized and the order is
+ * preserved.
+ * 
  * @author Sebastian Baechle
- *
+ * 
  */
 public abstract class SerialSink extends ChainedSink {
 
 	final Semaphore sem;
 	Tuple[] pending;
 	int pLen;
+	int held;
 
 	public SerialSink(int permits) {
-		this.sem = new Semaphore(permits);
+		this.sem = (permits >= 0) ? new Semaphore(permits) : null;
 	}
 
 	protected SerialSink(Semaphore sem) {
@@ -79,12 +80,23 @@ public abstract class SerialSink extends ChainedSink {
 
 	@Override
 	protected boolean yield() {
-		return !sem.tryAcquire(pLen);
+		if (sem != null) {
+			if (!sem.tryAcquire(pLen)) {
+				held = pLen;
+				return true;
+			}
+			return false;
+		}
+		return false;
 	}
 
 	@Override
 	protected void unyield() {
-		sem.release(pLen);
+		if (sem != null) {
+			int h = held;
+			held = 0;
+			sem.release(h);
+		}
 	}
 
 	@Override
