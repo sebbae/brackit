@@ -69,9 +69,8 @@ public class BlockExpr implements Expr {
 		EvalBlock task = new EvalBlock(t, start);
 		task.compute();
 
-		Sequence sequence = rs.asSequence();
-		System.out.println("Count: " + sequence.size());
-		return sequence;
+		Sequence res = rs.asSequence();
+		return res;
 	}
 
 	@Override
