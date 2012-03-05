@@ -52,21 +52,23 @@ public class Count implements Block {
 
 	static class CountSink extends SerialSink {
 		final Sink sink;
-		Counter pos = new Counter();
+		final Counter pos;
 
 		CountSink(Sink sink) {
 			super(FJControl.PERMITS);
 			this.sink = sink;
+			this.pos = new Counter();
 		}
 
-		CountSink(Semaphore sem, Sink sink) {
+		CountSink(Semaphore sem, Sink sink, Counter pos) {
 			super(sem);
 			this.sink = sink;
+			this.pos = pos;
 		}
 
 		@Override
 		protected SerialSink doFork() {
-			return new CountSink(sem, sink);
+			return new CountSink(sem, sink, pos);
 		}
 
 		@Override
@@ -80,12 +82,12 @@ public class Count implements Block {
 		}
 
 		@Override
-		protected void doBegin() throws QueryException {
+		protected void doFirstBegin() throws QueryException {
 			sink.begin();
 		}
 
 		@Override
-		protected void doEnd() throws QueryException {
+		protected void doFinalEnd() throws QueryException {
 			sink.end();
 		}
 	}
