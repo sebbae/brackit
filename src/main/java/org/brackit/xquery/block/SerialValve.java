@@ -63,12 +63,12 @@ public final class SerialValve extends SerialSink {
 	}
 
 	@Override
-	protected void doBegin() throws QueryException {
+	protected void doFirstBegin() throws QueryException {
 		sink.begin();
 	}
 
 	@Override
-	protected void doEnd() throws QueryException {
+	protected void doFinalEnd() throws QueryException {
 		sink.end();
 	}
 
