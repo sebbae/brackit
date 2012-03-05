@@ -28,6 +28,7 @@
 package org.brackit.xquery.block;
 
 import java.util.Arrays;
+import java.util.concurrent.Semaphore;
 
 import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
@@ -35,7 +36,6 @@ import org.brackit.xquery.Tuple;
 import org.brackit.xquery.atomic.Atomic;
 import org.brackit.xquery.compiler.translator.Reference;
 import org.brackit.xquery.util.Cmp;
-import org.brackit.xquery.util.forkjoin.Task;
 import org.brackit.xquery.util.join.FastList;
 import org.brackit.xquery.util.join.MultiTypeJoinTable;
 import org.brackit.xquery.xdm.Expr;
@@ -92,69 +92,112 @@ public class TableJoin implements Block {
 
 	@Override
 	public Sink create(QueryContext ctx, Sink sink) throws QueryException {
-		return new TableJoinSink(ctx, sink);
+		Join join = new Join();
+		Sink probe = new Probe(sink, ctx, join);
+		probe = (ordLeft) ? new SerialValve(lPermits, probe) : probe;
+		Sink leftIn = l.create(ctx, probe);
+		return new TableJoinSink(FJControl.PERMITS, ctx, leftIn, join);
 	}
 
-	private final class TableJoinSink implements Sink {
-		final QueryContext ctx;
-		final Sink sink;
-		MultiTypeJoinTable table;
-		Atomic gk;
+	private static class Join {
+		volatile MultiTypeJoinTable table;
+		volatile Atomic gk;
+	}
 
-		public TableJoinSink(QueryContext ctx, Sink sink) {
+	private final class TableJoinSink extends SerialSink {
+		final QueryContext ctx;
+		final Join join;
+		Sink sink;
+
+		public TableJoinSink(int permits, QueryContext ctx, Sink sink, Join join) {
+			super(permits);
 			this.ctx = ctx;
 			this.sink = sink;
+			this.join = join;
+		}
+
+		public TableJoinSink(Semaphore sem, QueryContext ctx, Sink sink,
+				Join join) {
+			super(sem);
+			this.ctx = ctx;
+			this.sink = sink;
+			this.join = join;
 		}
 
 		@Override
-		public Sink fork() {
-			TableJoinSink f = new TableJoinSink(ctx, sink);
-			f.table = table;
-			f.gk = gk;
-			return f;
+		protected ChainedSink doFork() {
+			return new TableJoinSink(sem, ctx, sink.fork(), join);
 		}
 
 		@Override
-		public void output(Tuple[] buf, int len) throws QueryException {			
+		protected void setPending(Tuple[] buf, int len) throws QueryException {
+			output(buf, len, false);
+		}
+
+		@Override
+		protected void doOutput(Tuple[] buf, int len) throws QueryException {
+			output(buf, len, true);
+		}
+
+		private void output(Tuple[] buf, int len, boolean hasToken)
+				throws QueryException {
 			int end = 0;
 			while (end < len) {
 				int start = end;
 				end = probeSize(buf, len, end);
-				if (table == null) {
-					// load table with first tuple in probe window			
-					load(buf[start]);
+				if (start == end) {
+					if (hasToken) {
+						// load table with first tuple in probe window
+						load(buf[start]);
+						continue;
+					} else {
+						Tuple[] remaining = Arrays.copyOfRange(buf, start, len);
+						super.setPending(remaining, len - start);
+						return;
+					}
 				}
 				probe(Arrays.copyOfRange(buf, start, end));
 			}
 		}
 
 		private void probe(Tuple[] buf) throws QueryException {
-			Sink probe = new Probe(sink, ctx, table);
-			probe = (ordLeft) ? new SerialValve(lPermits, probe) : probe;
-			Sink leftIn = l.create(ctx, probe);
-			leftIn.begin();				
-			leftIn.output(buf, buf.length);
-			leftIn.end();
+			Sink ss = sink;
+			sink = sink.fork();
+			ss.begin();
+			ss.output(buf, buf.length);
+			ss.end();
 		}
 
 		private void load(Tuple t) throws QueryException {
-			int offset = t.getSize();					
-			table = new MultiTypeJoinTable(cmp, isGCmp, skipSort);
+			int offset = t.getSize();
+			MultiTypeJoinTable table = new MultiTypeJoinTable(cmp, isGCmp,
+					skipSort);
 			Sink load = new Load(ctx, table, offset);
 			load = (ordRight) ? new SerialValve(rPermits, load) : load;
 			Sink rightIn = r.create(ctx, load);
-			Task task = new LoadTask(t, rightIn);
-			task.fork();
-			task.join();
+			rightIn.begin();
+			try {
+				rightIn.output(new Tuple[] { t }, 1);
+				rightIn.end();
+			} catch (QueryException e) {
+				rightIn.fail();
+				throw e;
+			}
+			Atomic gk = (groupVar >= 0) ? (Atomic) t.get(groupVar) : null;
+			join.gk = gk;
+			join.table = table;
 		}
 
 		private int probeSize(Tuple[] buf, int len, int end)
 				throws QueryException {
+			if (join.table == null) {
+				return 0;
+			}
 			if (groupVar >= 0) {
-				Atomic pgk = gk;
-				gk = (Atomic) buf[end++].get(groupVar);
-				if ((pgk != null) && (pgk.atomicCmp(gk) != 0)) {
-					table = null; // we need to rebuild the new table
+				Atomic pgk = join.gk;
+				Atomic gk = (Atomic) buf[end++].get(groupVar);
+				if ((pgk == null) || (pgk.atomicCmp(gk) != 0)) {
+					return 0; // we need to rebuild the new table
 				}
 				while (end < len) {
 					Atomic ngk = (Atomic) buf[end].get(groupVar);
@@ -164,52 +207,62 @@ public class TableJoin implements Block {
 					end++;
 				}
 			} else {
-				end = len + 1;
+				end = len;
 			}
 			return end;
 		}
 
 		@Override
-		public void begin() throws QueryException {
-			sink.begin();
+		public void doBegin() throws QueryException {
+			// do nothing
 		}
 
 		@Override
-		public void end() throws QueryException {
+		public void doEnd() throws QueryException {
+			sink.begin();
 			sink.end();
 		}
 
 		@Override
-		public void fail() throws QueryException {
+		public void doFail() throws QueryException {
 			sink.fail();
 		}
 	}
 
-	private final class Probe extends ConcurrentSink {
+	private final class Probe implements Sink {
 		final QueryContext ctx;
-		final Sink sink;
-		final MultiTypeJoinTable table;
+		final Join join;
 		final Sequence[] padding;
+		Sink sink;
 
-		Probe(Sink sink, QueryContext ctx, MultiTypeJoinTable table) {
+		Probe(Sink sink, QueryContext ctx, Join join) {
 			this.ctx = ctx;
-			this.sink = sink;
-			this.table = table;
+			this.join = join;
 			this.padding = new Sequence[pad];
+			this.sink = sink;
+		}
+
+		@Override
+		public Sink fork() {
+			return new Probe(sink.fork(), ctx, join);
 		}
 
 		@Override
 		public void output(Tuple[] buf, int len) throws QueryException {
+			Sink ss = sink;
+			sink = sink.fork();
+			ss.begin();
 			for (int i = 0; i < len; i++) {
 				Tuple tuple = buf[i];
-				probe(tuple);
+				ss = probe(ss, tuple);
 			}
+			ss.end();
 		}
 
-		private void probe(Tuple t) throws QueryException {
+		private Sink probe(Sink s, Tuple t) throws QueryException {
 			Sequence keys = (isGCmp) ? lExpr.evaluate(ctx, t) : lExpr
 					.evaluateToItem(ctx, t);
-			FastList<Sequence[]> matches = table.probe(keys);
+			FastList<Sequence[]> matches = join.table.probe(keys);
 			int itSize = matches.getSize();
 			if (itSize > 0) {
 				Tuple[] buf = new Tuple[itSize];
@@ -217,39 +270,39 @@ public class TableJoin implements Block {
 					buf[i] = t.concat(matches.get(i));
 				}
 				if (o != null) {
-					Sink opt = o.create(ctx, sink);
+					Sink ss = sink;
+					sink = sink.fork();
+					s.end();
+					s = ss.fork();
+					Sink opt = o.create(ctx, ss);
 					opt.begin();
 					opt.output(buf, itSize);
 					opt.end();
+					s.begin();
 				} else {
-					sink.output(buf, itSize);
+					s.output(buf, itSize);
 				}
 			} else if (leftJoin) {
 				Tuple[] buf = new Tuple[] { t.concat(padding) };
-				sink.output(buf, 1);
+				s.output(buf, 1);
 			}
-		}
-	}
-
-	private static final class LoadTask extends Task {
-		private final Tuple t;
-		private final Sink rightIn;
-
-		private LoadTask(Tuple t, Sink rightIn) {
-			this.t = t;
-			this.rightIn = rightIn;
+			return s;
 		}
 
 		@Override
-		public void compute() throws QueryException {
-			rightIn.begin();
-			try {
-				rightIn.output(new Tuple[] { t }, 1);
-				rightIn.end();
-			} catch (QueryException e) {
-				rightIn.fail();
-				throw e;
-			}
+		public void begin() throws QueryException {
+			// do nothing
+		}
+
+		@Override
+		public void end() throws QueryException {
+			sink.begin();
+			sink.end();
+		}
+
+		@Override
+		public void fail() throws QueryException {
+			sink.fail();
 		}
 	}
 
