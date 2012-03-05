@@ -37,23 +37,26 @@ import org.brackit.xquery.Tuple;
  */
 public abstract class MutexSink extends ConcurrentSink {
 
+	public abstract static class Out {
+
+	}
+
 	private final Object mutex;
 
 	public MutexSink() {
 		this.mutex = new Object();
 	}
 
-	protected abstract void doOutput(Tuple[] buf, int len)
-			throws QueryException;
+	protected abstract void doOutput(Out out) throws QueryException;
 
-	protected abstract int doPreOutput(Tuple[] buf, int len)
+	protected abstract Out doPreOutput(Tuple[] buf, int len)
 			throws QueryException;
 
 	@Override
 	public void output(Tuple[] buf, int len) throws QueryException {
-		int nlen = doPreOutput(buf, len);
+		Out out = doPreOutput(buf, len);
 		synchronized (mutex) {
-			doOutput(buf, nlen);
+			doOutput(out);
 		}
 	}
 }

@@ -30,6 +30,7 @@ package org.brackit.xquery.block;
 import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
+import org.brackit.xquery.block.MutexSink.Out;
 import org.brackit.xquery.util.sort.Ordering;
 import org.brackit.xquery.util.sort.Ordering.OrderModifier;
 import org.brackit.xquery.xdm.Expr;
@@ -60,35 +61,45 @@ public class OrderBy implements Block {
 		return new OrderBySink(sink, ctx);
 	}
 
+	private static class Sortable extends Out {
+		final Sequence[][] sortKeys;
+		final Tuple[] buf;
+		final int len;
+
+		public Sortable(Sequence[][] sortKeys, Tuple[] buf, int len) {
+			this.sortKeys = sortKeys;
+			this.buf = buf;
+			this.len = len;
+		}
+	}
+
 	private class OrderBySink extends MutexSink {
 		final Sink sink;
 		final QueryContext ctx;
-		Sequence[][] sortKeys;
-		Ordering sort;
+		final Ordering sort;
 
 		OrderBySink(Sink sink, QueryContext ctx) {
 			this.sink = sink;
 			this.ctx = ctx;
+			this.sort = new Ordering(orderByExprs, modifier);
 		}
 
 		@Override
-		protected int doPreOutput(Tuple[] buf, int len) throws QueryException {
-			if ((len > 0) && (sort == null)) {
-				sort = new Ordering(orderByExprs, modifier);
-			}
-			sortKeys = new Sequence[buf.length][];
+		protected Out doPreOutput(Tuple[] buf, int len)
+				throws QueryException {
+			Sequence[][] sortKeys = new Sequence[buf.length][];
 			for (int i = 0; i < len; i++) {
 				sortKeys[i] = sort.sortKeys(ctx, buf[i]);
 			}
-			return len;
+			return new Sortable(sortKeys, buf, len);
 		}
 
 		@Override
-		protected void doOutput(Tuple[] buf, int len) throws QueryException {
-			for (int i = 0; i < len; i++) {
-				sort.add(sortKeys[i], buf[i]);
+		protected void doOutput(Out out) throws QueryException {
+			Sortable s = (Sortable) out;
+			for (int i = 0; i < s.len; i++) {
+				sort.add(s.sortKeys[i], s.buf[i]);
 			}
-			sortKeys = null;
 		}
 
 		@Override
@@ -114,7 +125,6 @@ public class OrderBy implements Block {
 				sink.end();
 			} finally {
 				sort.clear();
-				sort = null;
 				s.close();
 			}
 		}
@@ -124,7 +134,6 @@ public class OrderBy implements Block {
 			sink.fail();
 			if (sort != null) {
 				sort.clear();
-				sort = null;
 			}
 		}
 	}

@@ -51,8 +51,8 @@ public class Ordering implements Comparator<Tuple> {
 
 	final Expr[] orderByExprs;
 	final OrderModifier[] modifier;
-	int offset;
-	TupleSort sort;
+	volatile int offset;
+	volatile TupleSort sort;
 
 	public Ordering(Expr[] orderByExprs, OrderModifier[] modifier) {
 		this.orderByExprs = orderByExprs;
@@ -61,16 +61,30 @@ public class Ordering implements Comparator<Tuple> {
 
 	public void add(QueryContext ctx, Tuple t) throws QueryException {
 		if (sort == null) {
-			offset = t.getSize();
-			sort = new TupleSort(this, 1);
+			synchronized (this) {
+				if (sort == null) {
+					offset = t.getSize();
+					sort = new TupleSort(this, 1);
+				}
+			}
 		}
 		sort.add(t.concat(sortKeys(ctx, t)));
 	}
 
 	public void add(Sequence[] keys, Tuple t) throws QueryException {
 		if (sort == null) {
-			offset = t.getSize();
-			sort = new TupleSort(this, 1);
+			synchronized (this) {
+				if (sort == null) {
+					offset = t.getSize();
+					sort = new TupleSort(this, 1);
+				}
+			}
+		}
+		if (t == null) {
+			throw new NullPointerException();
+		}
+		if (keys == null) {
+			throw new NullPointerException();
 		}
 		sort.add(t.concat(keys));
 	}

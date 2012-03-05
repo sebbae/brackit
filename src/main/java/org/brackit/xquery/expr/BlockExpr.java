@@ -118,6 +118,16 @@ public class BlockExpr implements Expr {
 		final Expr expr;
 		final FastList<Sequence> buf;
 
+		private static class Result extends Out {
+			final Tuple[] buf;
+			final int len;
+
+			private Result(Tuple[] buf, int len) {
+				this.buf = buf;
+				this.len = len;
+			}
+		}
+
 		public Return(QueryContext ctx, Expr expr) {
 			this.ctx = ctx;
 			this.expr = expr;
@@ -125,7 +135,7 @@ public class BlockExpr implements Expr {
 		}
 
 		@Override
-		protected int doPreOutput(Tuple[] buf, int len) throws QueryException {
+		protected Out doPreOutput(Tuple[] buf, int len) throws QueryException {
 			int nlen = 0;
 			for (int i = 0; i < len; i++) {
 				Sequence s = expr.evaluate(ctx, buf[i]);
@@ -133,12 +143,13 @@ public class BlockExpr implements Expr {
 					buf[nlen++] = s;
 				}
 			}
-			return nlen;
+			return new Result(buf, nlen);
 		}
 
 		@Override
-		protected void doOutput(Tuple[] buf, int len) throws QueryException {
-			this.buf.addAllSafe(buf, 0, len);
+		protected void doOutput(Out out) throws QueryException {
+			Result res = (Result) out;
+			this.buf.addAllSafe(res.buf, 0, res.len);
 		}
 
 		@Override
