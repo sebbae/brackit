@@ -49,19 +49,16 @@ public class FJExpr implements Expr {
 	}
 
 	@Override
-	public Sequence evaluate(QueryContext ctx, Tuple tuple)
-			throws QueryException {
-		System.out.println("parallelim: " + FJControl.POOL.getSize());
-		Eval task = new Eval(ctx, tuple);
+	public Sequence evaluate(QueryContext ctx, Tuple t) throws QueryException {
+		Eval task = new Eval(ctx, t);
 		FJControl.POOL.submit(task);
 		task.join();
 		return task.result;
 	}
 
 	@Override
-	public Item evaluateToItem(QueryContext ctx, Tuple tuple)
-			throws QueryException {
-		ItemEval task = new ItemEval(ctx, tuple);
+	public Item evaluateToItem(QueryContext ctx, Tuple t) throws QueryException {
+		ItemEval task = new ItemEval(ctx, t);
 		FJControl.POOL.submit(task);
 		task.join();
 		return task.result;
