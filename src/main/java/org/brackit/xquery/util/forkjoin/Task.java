@@ -96,6 +96,11 @@ public abstract class Task {
 		}
 	}
 
+	public boolean finished() {
+		int s = status;
+		return (s > 0);
+	}
+
 	protected void joinLast() {
 		Thread me;
 		if ((me = Thread.currentThread()) instanceof Worker) {

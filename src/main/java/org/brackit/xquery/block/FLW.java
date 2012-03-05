@@ -82,7 +82,7 @@ public class FLW implements Block {
 		final Sink s;
 		final Cursor off;
 		final int d;
-		Slice fork;
+		volatile Slice fork;
 
 		private Slice(QueryContext ctx, Sink s, Cursor off, int d) {
 			this.ctx = ctx;
@@ -93,6 +93,9 @@ public class FLW implements Block {
 
 		public void compute() throws QueryException {
 			fork = bind(off, d);
+			while ((fork != null) && (fork.finished())) {
+				fork = fork.fork;
+			}
 		}
 
 		private Slice bind(Cursor c, int d) throws QueryException {
