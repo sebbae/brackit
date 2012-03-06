@@ -94,6 +94,11 @@ public class Pool {
 	}
 
 	public Task submit(Task task) {
+		Thread me;
+		if ((me = Thread.currentThread()) instanceof Worker) {
+			((Worker) me).fork(task);
+			return task;
+		}
 		Worker w = inactive.poll();
 		if (w != null) {
 			w.push(task);

@@ -67,7 +67,7 @@ public class BlockExpr implements Expr {
 		Sink start = block.create(ctx, end);
 
 		EvalBlock task = new EvalBlock(t, start);
-		task.compute();
+		FJControl.POOL.submit(task).join();
 
 		Sequence res = rs.asSequence();
 		return res;
