@@ -146,11 +146,11 @@ public class CompileChain {
 			System.out.println(String.format("Compiling:\n%s", query));
 		}
 		ModuleResolver resolver = getModuleResolver();
-		Analyzer analyzer = new Analyzer(resolver, baseURI, parse(query));
-		AST xquery = analyzer.getAST();
+		AST parsed = parse(query);
 		if (XQuery.DEBUG) {
-			DotUtil.drawDotToFile(xquery.dot(), XQuery.DEBUG_DIR, "parsed");
+			DotUtil.drawDotToFile(parsed.dot(), XQuery.DEBUG_DIR, "parsed");
 		}
+		Analyzer analyzer = new Analyzer(resolver, baseURI, parsed);
 		Module module = analyzer.getModules().get(0);
 		// optimize all targets of all modules
 		for (Target t : analyzer.getTargets()) {
@@ -166,6 +166,7 @@ public class CompileChain {
 				resolver.register(m.getTargetNS(), m);
 			}
 		}
+		AST xquery = analyzer.getAST();
 		if (XQuery.DEBUG) {
 			DotUtil.drawDotToFile(xquery.dot(), XQuery.DEBUG_DIR, "xquery");
 		}
