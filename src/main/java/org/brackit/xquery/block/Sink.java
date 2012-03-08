@@ -36,7 +36,7 @@ import org.brackit.xquery.Tuple;
  * </p>
  * <p>
  * Clients must use sinks only according to the protocol:
- * <em>fork()* -> begin() -> output()* -> (end() | fail())</em>.
+ * <em>(fork()|partition())* -> begin() -> output()* -> (end() | fail())</em>.
  * </p>
  * <p>
  * Logically, each sink is used single-threaded, i.e., callers 
@@ -69,6 +69,12 @@ public interface Sink {
 	 * Create a fork of the current sink.
 	 */
 	public Sink fork();
+	
+	/**
+	 * Create a partition fork of the current sink.
+	 * @param stopAt TODO
+	 */
+	public Sink partition(Sink stopAt);
 
 	/**
 	 * Notify the sink that no further output operations will be called. This

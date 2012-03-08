@@ -204,6 +204,11 @@ public class FLW implements Block {
 		public Sink fork() {
 			return new FLWSink(ctx, s.fork());
 		}
+		
+		@Override
+		public Sink partition(Sink stopAt) {
+			return new FLWSink(ctx, s.partition(stopAt));
+		}
 
 		@Override
 		public void fail() throws QueryException {

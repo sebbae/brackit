@@ -83,6 +83,10 @@ public class OrderBy implements Block {
 			this.ctx = ctx;
 			this.sort = new Ordering(orderByExprs, modifier);
 		}
+		
+		public Sink partition(Sink stopAt) {
+			return new OrderBySink(sink.partition(stopAt), ctx);
+		}
 
 		@Override
 		protected Out doPreOutput(Tuple[] buf, int len)

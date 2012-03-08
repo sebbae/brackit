@@ -58,6 +58,12 @@ public class GroupBy implements Block {
 		}
 
 		@Override
+		protected ChainedSink doPartition(Sink stopAt) {
+			Grouping grp = new Grouping(groupSpecs, onlyLast);
+			return new GroupBySink(sem, sink.partition(stopAt), grp);
+		}
+
+		@Override
 		protected SerialSink doFork() {
 			return new GroupBySink(sem, sink, grp);
 		}

@@ -33,8 +33,8 @@ import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
 
 /**
- * A serial valve is a generic wrapper around a sink 
- * to ensure serialized, order-preserving, single-threaded access.  
+ * A serial valve is a generic wrapper around a sink to ensure serialized,
+ * order-preserving, single-threaded access.
  * 
  * @author Sebastian Baechle
  * 
@@ -55,6 +55,11 @@ public final class SerialValve extends SerialSink {
 	@Override
 	protected ChainedSink doFork() {
 		return new SerialValve(sem, sink);
+	}
+
+	@Override
+	protected ChainedSink doPartition(Sink stopAt) {
+		return new SerialValve(sem, sink.partition(stopAt));
 	}
 
 	@Override

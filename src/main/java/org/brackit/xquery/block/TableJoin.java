@@ -59,9 +59,7 @@ public class TableJoin implements Block {
 	int groupVar = -1;
 
 	boolean ordRight = true;
-	boolean ordLeft = true;
 	int rPermits = FJControl.PERMITS;
-	int lPermits = FJControl.PERMITS;
 
 	public TableJoin(Cmp cmp, boolean isGCmsp, boolean leftJoin,
 			boolean skipSort, Block l, Expr lExpr, Block r, Expr rExpr, Block o) {
@@ -93,8 +91,12 @@ public class TableJoin implements Block {
 	@Override
 	public Sink create(QueryContext ctx, Sink sink) throws QueryException {
 		Join join = new Join();
-		Sink probe = new Probe(sink, ctx, join);
-		probe = (ordLeft) ? new SerialValve(lPermits, probe) : probe;
+		PartitionEnd pe = null;
+		if (o != null) {
+			pe = new PartitionEnd(sink);
+			sink = o.create(ctx, pe);			
+		}
+		Sink probe = new Probe(sink, pe, ctx, join);
 		Sink leftIn = l.create(ctx, probe);
 		return new TableJoinSink(FJControl.PERMITS, ctx, leftIn, join);
 	}
@@ -127,6 +129,11 @@ public class TableJoin implements Block {
 		@Override
 		protected ChainedSink doFork() {
 			return new TableJoinSink(sem, ctx, sink.fork(), join);
+		}
+
+		@Override
+		protected ChainedSink doPartition(Sink stopAt) {
+			return new TableJoinSink(sem, ctx, sink.partition(stopAt), join);
 		}
 
 		@Override
@@ -234,59 +241,90 @@ public class TableJoin implements Block {
 		final Join join;
 		final Sequence[] padding;
 		Sink sink;
+		PartitionEnd pe;
 
-		Probe(Sink sink, QueryContext ctx, Join join) {
+		Probe(Sink sink, PartitionEnd pe, QueryContext ctx, Join join) {
 			this.ctx = ctx;
 			this.join = join;
 			this.padding = new Sequence[pad];
 			this.sink = sink;
+			this.pe = pe;
 		}
 
 		@Override
 		public Sink fork() {
-			return new Probe(sink.fork(), ctx, join);
+			if (pe == null) {
+				return new Probe(sink.fork(), null, ctx, join);
+			}
+			return partition(pe);
+		}
+
+		@Override
+		public Sink partition(Sink stopAt) {
+			if (pe == null) {
+				return new Probe(sink.partition(stopAt), null, ctx, join);
+			}
+			Sink fork = sink.partition(stopAt);
+			PartitionEnd fpe = pe.next;
+			pe.next = null; // we don't need chaining anymore
+			return new Probe(fork, fpe, ctx, join);
 		}
 
 		@Override
 		public void output(Tuple[] buf, int len) throws QueryException {
-			Sink ss = sink;
-			sink = sink.fork();
-			ss.begin();
-			for (int i = 0; i < len; i++) {
-				Tuple tuple = buf[i];
-				ss = probe(ss, tuple);
+			if (pe == null) {
+				outputUnconditional(buf, len);
+			} else {
+				outputConditional(buf, len);
 			}
-			ss.end();
 		}
 
-		private Sink probe(Sink s, Tuple t) throws QueryException {
+		private void outputUnconditional(Tuple[] buf, int len)
+				throws QueryException {
+			// fork out for future next calls
+			Sink s = sink;
+			sink = sink.fork();
+			s.begin();
+			for (int i = 0; i < len; i++) {
+				Tuple t = buf[i];
+				probe(t, s, s);
+			}
+			s.end();
+		}
+
+		private void outputConditional(Tuple[] buf, int len)
+				throws QueryException {
+			for (int i = 0; i < len; i++) {
+				// create partitioned fork for future next calls
+				Sink ss = sink;
+				PartitionEnd spe = pe;
+				sink = sink.partition(pe);
+				pe = pe.next;
+				spe.doBegin();
+				ss.begin();
+				Tuple t = buf[i];
+				probe(t, ss, spe);
+				ss.end();
+				spe.doEnd();
+			}
+		}
+
+		private void probe(Tuple t, Sink matchSink, Sink ljoinSink)
+				throws QueryException {
 			Sequence keys = (isGCmp) ? lExpr.evaluate(ctx, t) : lExpr
 					.evaluateToItem(ctx, t);
 			FastList<Sequence[]> matches = join.table.probe(keys);
 			int itSize = matches.getSize();
 			if (itSize > 0) {
-				Tuple[] buf = new Tuple[itSize];
-				for (int i = 0; i < itSize; i++) {
-					buf[i] = t.concat(matches.get(i));
+				Tuple[] buf2 = new Tuple[itSize];
+				for (int j = 0; j < itSize; j++) {
+					buf2[j] = t.concat(matches.get(j));
 				}
-				if (o != null) {
-					Sink ss = sink;
-					sink = sink.fork();
-					s.end();
-					s = ss.fork();
-					Sink opt = o.create(ctx, ss);
-					opt.begin();
-					opt.output(buf, itSize);
-					opt.end();
-					s.begin();
-				} else {
-					s.output(buf, itSize);
-				}
+				matchSink.output(buf2, itSize);
 			} else if (leftJoin) {
-				Tuple[] buf = new Tuple[] { t.concat(padding) };
-				s.output(buf, 1);
+				Tuple[] buf2 = new Tuple[] { t.concat(padding) };
+				ljoinSink.output(buf2, 1);
 			}
-			return s;
 		}
 
 		@Override
@@ -296,8 +334,14 @@ public class TableJoin implements Block {
 
 		@Override
 		public void end() throws QueryException {
+			if (pe != null) {
+				pe.doBegin();
+			}
 			sink.begin();
 			sink.end();
+			if (pe != null) {
+				pe.doEnd();
+			}
 		}
 
 		@Override
@@ -319,6 +363,11 @@ public class TableJoin implements Block {
 		}
 
 		@Override
+		public Sink partition(Sink stopAt) {
+			return fork();
+		}
+
+		@Override
 		public void output(Tuple[] buf, int len) throws QueryException {
 			for (int i = 0; i < len; i++) {
 				Tuple t = buf[i];
@@ -331,6 +380,54 @@ public class TableJoin implements Block {
 					table.add(keys, bindings, pos++);
 				}
 			}
+		}
+	}
+
+	private static class PartitionEnd implements Sink {
+		private final Sink out;
+		private PartitionEnd next;
+
+		PartitionEnd(Sink out) {
+			this.out = out;
+		}
+
+		@Override
+		public Sink fork() {
+			return (next = new PartitionEnd(out.fork()));
+		}
+
+		@Override
+		public Sink partition(Sink stopAt) {
+			Sink nout = (stopAt == this) ? out.fork() : out.partition(stopAt);
+			return (next = new PartitionEnd(nout));
+		}
+
+		@Override
+		public void output(Tuple[] buf, int len) throws QueryException {
+			out.output(buf, len);
+		}
+
+		@Override
+		public void begin() throws QueryException {
+			// do nothing
+		}
+
+		@Override
+		public void end() throws QueryException {
+			// do nothing
+		}
+
+		@Override
+		public void fail() throws QueryException {
+			out.fail();
+		}
+
+		void doBegin() throws QueryException {
+			out.begin();
+		}
+
+		void doEnd() throws QueryException {
+			out.end();
 		}
 	}
 }

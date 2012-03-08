@@ -60,9 +60,6 @@ public abstract class SerialSink extends ChainedSink {
 			throws QueryException;
 
 	@Override
-	protected abstract ChainedSink doFork();
-
-	@Override
 	protected void processPending() throws QueryException {
 		doOutput(pending, pLen);
 		pending = null;

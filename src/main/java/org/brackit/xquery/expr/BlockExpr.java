@@ -134,6 +134,11 @@ public class BlockExpr implements Expr {
 		}
 
 		@Override
+		public Sink partition(Sink stopAt) {
+			return fork();
+		}
+
+		@Override
 		protected Out doPreOutput(Tuple[] buf, int len) throws QueryException {
 			int nlen = 0;
 			for (int i = 0; i < len; i++) {

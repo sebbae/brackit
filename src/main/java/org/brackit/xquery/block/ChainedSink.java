@@ -40,7 +40,7 @@ import org.brackit.xquery.util.forkjoin.Worker;
  * @author Sebastian Baechle
  * 
  */
-public class ChainedSink implements Sink {
+public abstract class ChainedSink implements Sink {
 
 	private static final int NO_TOKEN = 0;
 	private static final int WAIT_TOKEN = 1;
@@ -63,9 +63,23 @@ public class ChainedSink implements Sink {
 		return (next = fork);
 	}
 
-	protected ChainedSink doFork() {
-		return new ChainedSink();
+	protected abstract ChainedSink doFork();
+
+	public final ChainedSink partition(Sink stopAt) {
+		ChainedSink partition = doPartition(stopAt);
+		if (chainPartitions()) {
+			partition.next = next;
+			partition.state = NO_TOKEN;
+			next = partition;
+		}
+		return partition;
 	}
+
+	protected boolean chainPartitions() {
+		return false;
+	}
+
+	protected abstract ChainedSink doPartition(Sink stopAt);
 
 	protected void processPending() throws QueryException {
 	}
@@ -158,14 +172,15 @@ public class ChainedSink implements Sink {
 			if (compareAndSet(NO_TOKEN, WAIT_TOKEN)) {
 				// drop local work queue only if necessary
 				// or token was not granted concurrently
-				if ((hasPending) && ((yield()) || (!compareAndSet(queue, null)))) {
+				if ((hasPending)
+						&& ((yield()) || (!compareAndSet(queue, null)))) {
 					// drop local queue
 					worker.dropQueue();
 				}
 				return;
 			}
 			s = state;
-		}		
+		}
 		if (s == HAS_TOKEN) {
 			endWithToken();
 		} else if (s == FAILED) {

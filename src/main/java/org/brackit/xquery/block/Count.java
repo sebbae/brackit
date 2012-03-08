@@ -67,6 +67,11 @@ public class Count implements Block {
 		}
 
 		@Override
+		protected ChainedSink doPartition(Sink stopAt) {
+			return new CountSink(sem, sink.partition(stopAt), new Counter());
+		}
+
+		@Override
 		protected SerialSink doFork() {
 			return new CountSink(sem, sink, pos);
 		}
