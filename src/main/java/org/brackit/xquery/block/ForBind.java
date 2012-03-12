@@ -30,37 +30,47 @@ package org.brackit.xquery.block;
 import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
-import org.brackit.xquery.operator.Cursor;
-import org.brackit.xquery.operator.LetBind;
-import org.brackit.xquery.operator.Operator;
-import org.brackit.xquery.operator.Select;
+import org.brackit.xquery.atomic.Int32;
+import org.brackit.xquery.atomic.IntNumeric;
 import org.brackit.xquery.util.forkjoin.Task;
+import org.brackit.xquery.xdm.Expr;
+import org.brackit.xquery.xdm.Item;
+import org.brackit.xquery.xdm.Iter;
+import org.brackit.xquery.xdm.Sequence;
 
 /**
  * 
  * @author Sebastian Baechle
  * 
  */
-public class FLW implements Block {
+public class ForBind implements Block {
 
-	final Operator[] op;
+	final Expr expr;
+	final boolean allowingEmpty;
+	boolean bindVar = true;
+	boolean bindPos = false;
 
-	public FLW(Operator[] op) {
-		this.op = op;
+	public ForBind(Expr bind, boolean allowingEmpty) {
+		this.expr = bind;
+		this.allowingEmpty = allowingEmpty;
 	}
 
 	@Override
 	public int outputWidth(int initSize) {
-		int s = initSize;
-		for (Operator o : op) {
-			s = o.tupleWidth(s);
-		}
-		return s;
+		return initSize + ((bindVar) ? 1 : 0) + ((bindPos) ? 1 : 0);
 	}
 
 	@Override
 	public Sink create(QueryContext ctx, Sink sink) throws QueryException {
-		return new FLWSink(ctx, sink);
+		return new ForBindSink(ctx, sink);
+	}
+	
+	public void bindVariable(boolean bindVariable) {
+		this.bindVar = bindVariable;
+	}
+
+	public void bindPosition(boolean bindPos) {
+		this.bindPos = bindPos;
 	}
 
 	private static class Buf {
@@ -80,44 +90,45 @@ public class FLW implements Block {
 	private class Slice extends Task {
 		final QueryContext ctx;
 		final Sink s;
-		final Cursor off;
-		final int d;
+		final Tuple t;
+		final Iter it;
+		IntNumeric pos;
 		volatile Slice fork;
 
-		private Slice(QueryContext ctx, Sink s, Cursor off, int d) {
+		private Slice(QueryContext ctx, Sink s, Tuple t, Iter it, IntNumeric pos) {
 			this.ctx = ctx;
 			this.s = s;
-			this.off = off;
-			this.d = d;
+			this.t = t;
+			this.it = it;
+			this.pos = pos;
 		}
 
 		public void compute() throws QueryException {
-			fork = bind(off, d);
+			fork = bind(it);
 			while ((fork != null) && (fork.finished())) {
 				fork = fork.fork;
 			}
 		}
 
-		private Slice bind(Cursor c, int d) throws QueryException {
-			Buf buf = new Buf(bufSize(d));
-			Slice fork = fillBuffer(c, d, buf);
+		private Slice bind(Iter c) throws QueryException {
+			Buf buf = new Buf(bufSize());
+			Slice fork = fillBuffer(c, buf);
 			if (buf.len == 0) {
 				s.begin();
 				s.end();
 				return null;
 			}
 			// process local share
-			if (d + 1 < op.length) {
-				descend(d, buf);
-			} else {
-				output(buf);
-			}
+			output(buf);
 			return fork;
 		}
 
 		private void output(Buf buf) throws QueryException {
 			s.begin();
 			try {
+				for (int i = 0; i < buf.len; i++) {
+					buf.b[i] = emit(t, (Sequence) buf.b[i]);
+				}
 				s.output(buf.b, buf.len);
 			} catch (QueryException e) {
 				s.fail();
@@ -126,88 +137,120 @@ public class FLW implements Block {
 			s.end();
 		}
 
-		private void descend(int d, Buf buf) throws QueryException {
-			Cursor c2 = op[d + 1].create(ctx, buf.b, buf.len);
-			c2.open(ctx);
-			buf = null; // allow gc
-			Slice fork = bind(c2, d + 1);
-			while (fork != null) {
-				fork.join();
-				fork = fork.fork;
+		private Tuple emit(Tuple t, Sequence item) throws QueryException {
+			if (bindVar) {
+				if (bindPos) {
+					return t.concat(new Sequence[] { item,
+							(item != null) ? (pos = pos.inc()) : pos });
+				} else {
+					return t.concat(item);
+				}
+			} else if (bindPos) {
+				return t.concat((item != null) ? (pos = pos.inc()) : pos);
+			} else {
+				return t;
 			}
 		}
 
-		private Slice fillBuffer(Cursor c, int d, Buf buf)
-				throws QueryException {
+		private Slice fillBuffer(Iter it, Buf buf) throws QueryException {
 			while (true) {
-				Tuple t = c.next(ctx);
-				if (t != null) {
-					if (!buf.add(t)) {
-						Slice fork = new Slice(ctx, s.fork(), c, d);
+				Item i = it.next();
+				if (i != null) {
+					if (!buf.add(i)) {
+						IntNumeric npos = (IntNumeric) ((pos != null) ? pos
+								.add(new Int32(buf.len)) : null);
+						Slice fork = new Slice(ctx, s.fork(), t, it, npos);
 						fork.fork();
+						it = null;
 						return fork;
 					}
 				} else {
-					c.close(ctx);
-					c = null; // allow garbage collection
+					it.close();
+					it = null; // allow garbage collection
 					return null;
 				}
 			}
 		}
 
-		private int bufSize(int d) {
-			if (d < 0) {
-				return 1;
-			}
-			if (op[d] instanceof LetBind) {
-				return (d == 0) ? 1 : bufSize(d - 1);
-			}
-			if (op[d] instanceof Select) {
-				return bufSize(d - 1);
-			}
+		private int bufSize() {
 			// TODO
-			return (d < FJControl.FORK_BUFFER.length) ? FJControl.FORK_BUFFER[d]
-					: FJControl.FORK_BUFFER_DEFAULT;
-		}
-
-		public String toString() {
-			return "Slice L=" + d + " " + System.identityHashCode(this);
+			return 20;
 		}
 	}
 
-	private class FLWSink extends FJControl implements Sink {
+	private class ForBindTask extends Task {
+		private final QueryContext ctx;
+		private final Tuple[] buf;
+		private final int start;
+		private final int end;
+		private Sink sink;
+
+		public ForBindTask(QueryContext ctx, Sink sink, Tuple[] buf, int start,
+				int end) {
+			this.ctx = ctx;
+			this.sink = sink;
+			this.buf = buf;
+			this.start = start;
+			this.end = end;
+		}
+
+		@Override
+		public void compute() throws QueryException {
+			if (end - start > 10) {
+				int mid = start + ((end - start) / 2);
+				ForBindTask a = new ForBindTask(ctx, sink.fork(), buf, mid, end);
+				ForBindTask b = new ForBindTask(ctx, sink, buf, start, mid);
+				a.fork();
+				b.compute();
+				a.join();
+			} else {
+				IntNumeric pos = (bindPos) ? Int32.ZERO : null;
+				for (int i = start; i < end; i++) {
+					Sequence s = expr.evaluate(ctx, buf[i]);
+					Sink ss = sink;
+					sink = sink.fork();
+					if (s != null) {
+						Slice sl = new Slice(ctx, ss, buf[i], s.iterate(), pos);
+						sl.compute();
+						Slice fork = sl.fork;
+						while (fork != null) {
+							fork.join();
+							fork = fork.fork;
+						}
+					}
+				}
+				sink.begin();
+				sink.end();
+			}
+		}
+	}
+
+	private class ForBindSink extends FJControl implements Sink {
 		Sink s;
 		final QueryContext ctx;
 
-		private FLWSink(QueryContext ctx, Sink s) {
+		private ForBindSink(QueryContext ctx, Sink s) {
 			this.ctx = ctx;
 			this.s = s;
 		}
 
 		@Override
 		public void output(Tuple[] t, int len) throws QueryException {
-			Cursor c = op[0].create(ctx, t, len);
-			c.open(ctx);
 			// fork sink for future output calls
 			Sink ss = s;
 			s = s.fork();
-			Slice task = new Slice(ctx, ss, c, 0);
+			ForBindTask task = new ForBindTask(ctx, ss, t, 0, len);
 			task.compute();
-			Slice fork = task.fork;
-			while (fork != null) {
-				fork.join();
-				fork = fork.fork;
-			}
 		}
 
 		@Override
 		public Sink fork() {
-			return new FLWSink(ctx, s.fork());
+			return new ForBindSink(ctx, s.fork());
 		}
-		
+
 		@Override
 		public Sink partition(Sink stopAt) {
-			return new FLWSink(ctx, s.partition(stopAt));
+			return new ForBindSink(ctx, s.partition(stopAt));
 		}
 
 		@Override

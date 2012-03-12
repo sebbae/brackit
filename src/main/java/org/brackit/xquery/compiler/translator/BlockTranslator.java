@@ -28,7 +28,6 @@
 package org.brackit.xquery.compiler.translator;
 
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 
 import org.brackit.xquery.ErrorCode;
@@ -37,9 +36,11 @@ import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.block.Block;
 import org.brackit.xquery.block.BlockChain;
 import org.brackit.xquery.block.Count;
-import org.brackit.xquery.block.FLW;
+import org.brackit.xquery.block.ForBind;
 import org.brackit.xquery.block.GroupBy;
+import org.brackit.xquery.block.LetBind;
 import org.brackit.xquery.block.OrderBy;
+import org.brackit.xquery.block.Select;
 import org.brackit.xquery.block.TableJoin;
 import org.brackit.xquery.compiler.AST;
 import org.brackit.xquery.compiler.XQ;
@@ -47,11 +48,6 @@ import org.brackit.xquery.expr.BlockExpr;
 import org.brackit.xquery.expr.FJExpr;
 import org.brackit.xquery.module.Module;
 import org.brackit.xquery.module.StaticContext;
-import org.brackit.xquery.operator.ForBind;
-import org.brackit.xquery.operator.LetBind;
-import org.brackit.xquery.operator.Operator;
-import org.brackit.xquery.operator.Select;
-import org.brackit.xquery.operator.Start;
 import org.brackit.xquery.util.Cmp;
 import org.brackit.xquery.util.sort.Ordering.OrderModifier;
 import org.brackit.xquery.xdm.Expr;
@@ -122,9 +118,13 @@ public class BlockTranslator extends Compiler {
 		case XQ.End:
 			return; // stop
 		case XQ.ForBind:
+			forBlock(node, blocks);
+			break;
 		case XQ.LetBind:
+			letBlock(node, blocks);
+			break;
 		case XQ.Selection:
-			flwBlock(node, blocks);
+			selectBlock(node, blocks);
 			break;
 		case XQ.OrderBy:
 			orderByBlock(node, blocks);
@@ -143,6 +143,69 @@ public class BlockTranslator extends Compiler {
 					"Unexpected AST operator node '%s' of type: %s", node,
 					node.getType());
 		}
+	}
+
+	private void forBlock(AST node, List<Block> blocks) throws QueryException {
+		int pos = 0;
+		AST runVarDecl = node.getChild(pos++);
+		QNm runVarName = (QNm) runVarDecl.getChild(0).getValue();
+		SequenceType runVarType = SequenceType.ITEM_SEQUENCE;
+		if (runVarDecl.getChildCount() == 2) {
+			runVarType = sequenceType(runVarDecl.getChild(1));
+		}
+		AST posBindingOrSourceExpr = node.getChild(pos++);
+		QNm posVarName = null;
+		if (posBindingOrSourceExpr.getType() == XQ.TypedVariableBinding) {
+			posVarName = (QNm) posBindingOrSourceExpr.getChild(0).getValue();
+			posBindingOrSourceExpr = node.getChild(pos++);
+		}
+		Expr sourceExpr = expr(posBindingOrSourceExpr, true);
+
+		Binding posBinding = null;
+		Binding runVarBinding = table.bind(runVarName, runVarType);
+		// Fake binding of run variable because set-oriented processing requires
+		// the variable anyway
+		table.resolve(runVarName);
+
+		if (posVarName != null) {
+			posBinding = table.bind(posVarName, SequenceType.INTEGER);
+			// Fake binding of pos variable to simplify compilation.
+			table.resolve(posVarName);
+			// TODO Optimize and do not bind variable if not necessary
+		}
+		ForBind forBind = new ForBind(sourceExpr, false);
+		if (posBinding != null) {
+			forBind.bindPosition(posBinding.isReferenced());
+		}
+		blocks.add(forBind);
+		anyBlock(node.getLastChild(), blocks);
+	}
+
+	private void letBlock(AST node, List<Block> blocks) throws QueryException {
+		int pos = 0;
+		AST letVarDecl = node.getChild(pos++);
+		QNm letVarName = (QNm) letVarDecl.getChild(0).getValue();
+		SequenceType letVarType = SequenceType.ITEM_SEQUENCE;
+		if (letVarDecl.getChildCount() == 2) {
+			letVarType = sequenceType(letVarDecl.getChild(1));
+		}
+		Expr sourceExpr = expr(node.getChild(pos++), true);
+		Binding binding = table.bind(letVarName, letVarType);
+
+		// Fake binding of let variable because set-oriented processing requires
+		// the variable anyway
+		table.resolve(letVarName);
+		LetBind letBind = new LetBind(sourceExpr);
+		blocks.add(letBind);
+		anyBlock(node.getLastChild(), blocks);
+	}
+
+	private void selectBlock(AST node, List<Block> blocks)
+			throws QueryException {
+		Expr expr = anyExpr(node.getChild(0));
+		Select select = new Select(expr);
+		blocks.add(select);
+		anyBlock(node.getLastChild(), blocks);
 	}
 
 	private void orderByBlock(AST node, List<Block> blocks)
@@ -177,85 +240,6 @@ public class BlockTranslator extends Compiler {
 			}
 		}
 		return new OrderModifier(asc, emptyLeast, collation);
-	}
-
-	protected void flwBlock(AST node, List<Block> blocks) throws QueryException {
-		List<Operator> ops = new LinkedList<Operator>();
-		while (true) {
-			int type = node.getType();
-			if (type == XQ.ForBind) {
-				ops.add(forBind(node));
-			} else if (type == XQ.LetBind) {
-				ops.add(letBind(node));
-			} else if (type == XQ.Selection) {
-				ops.add(select(node));
-			} else {
-				break;
-			}
-			node = node.getLastChild();
-		}
-		FLW flwBlock = new FLW(ops.toArray(new Operator[ops.size()]));
-		blocks.add(flwBlock);
-		anyBlock(node, blocks);
-	}
-
-	protected Operator forBind(AST node) throws QueryException {
-		int pos = 0;
-		AST runVarDecl = node.getChild(pos++);
-		QNm runVarName = (QNm) runVarDecl.getChild(0).getValue();
-		SequenceType runVarType = SequenceType.ITEM_SEQUENCE;
-		if (runVarDecl.getChildCount() == 2) {
-			runVarType = sequenceType(runVarDecl.getChild(1));
-		}
-		AST posBindingOrSourceExpr = node.getChild(pos++);
-		QNm posVarName = null;
-		if (posBindingOrSourceExpr.getType() == XQ.TypedVariableBinding) {
-			posVarName = (QNm) posBindingOrSourceExpr.getChild(0).getValue();
-			posBindingOrSourceExpr = node.getChild(pos++);
-		}
-		Expr sourceExpr = expr(posBindingOrSourceExpr, true);
-
-		Binding posBinding = null;
-		Binding runVarBinding = table.bind(runVarName, runVarType);
-		// Fake binding of run variable because set-oriented processing requires
-		// the variable anyway
-		table.resolve(runVarName);
-
-		if (posVarName != null) {
-			posBinding = table.bind(posVarName, SequenceType.INTEGER);
-			// Fake binding of pos variable to simplify compilation.
-			table.resolve(posVarName);
-			// TODO Optimize and do not bind variable if not necessary
-		}
-		ForBind forBind = new ForBind(new Start(), sourceExpr, false);
-		if (posBinding != null) {
-			forBind.bindPosition(posBinding.isReferenced());
-		}
-		return forBind;
-	}
-
-	protected Operator letBind(AST node) throws QueryException {
-		int pos = 0;
-		AST letVarDecl = node.getChild(pos++);
-		QNm letVarName = (QNm) letVarDecl.getChild(0).getValue();
-		SequenceType letVarType = SequenceType.ITEM_SEQUENCE;
-		if (letVarDecl.getChildCount() == 2) {
-			letVarType = sequenceType(letVarDecl.getChild(1));
-		}
-		Expr sourceExpr = expr(node.getChild(pos++), true);
-		Binding binding = table.bind(letVarName, letVarType);
-
-		// Fake binding of let variable because set-oriented processing requires
-		// the variable anyway
-		table.resolve(letVarName);
-		LetBind letBind = new LetBind(new Start(), sourceExpr);
-		return letBind;
-	}
-
-	protected Operator select(AST node) throws QueryException {
-		Expr expr = anyExpr(node.getChild(0));
-		Select select = new Select(new Start(), expr);
-		return select;
 	}
 
 	protected void groupByBlock(AST node, List<Block> blocks)
