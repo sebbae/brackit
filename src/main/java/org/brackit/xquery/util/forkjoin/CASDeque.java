@@ -136,4 +136,9 @@ public class CASDeque<E> implements Deque<E> {
 			}
 		}
 	}
+	
+	@Override
+	public int size() {
+		throw new RuntimeException("Not implemented yet");
+	}
 }

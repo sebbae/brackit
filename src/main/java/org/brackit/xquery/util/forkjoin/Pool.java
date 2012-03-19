@@ -27,6 +27,9 @@
  */
 package org.brackit.xquery.util.forkjoin;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -43,11 +46,11 @@ public class Pool {
 	private static final boolean LOG = false;
 	private final int size;
 	private final Worker[] workers;
-	private final CASDeque<Worker> inactive;
+	private final ConcurrentLinkedQueue<Worker> inactive;
 
 	public Pool(int size, WorkerFactory factory) {
 		this.size = size;
-		inactive = new CASDeque<Worker>();
+		inactive = new ConcurrentLinkedQueue<Worker>();
 		workers = new Worker[size];
 		for (int i = 0; i < size; i++) {
 			workers[i] = factory.newThread(this);
@@ -72,20 +75,24 @@ public class Pool {
 	Task stealTask(Worker stealer) {
 		Task t;
 		if ((stealer.victim != null)
-				&& ((t = stealer.victim.pollLast()) != null)) {
+				&& ((t = stealer.victim.steal()) != null)) {
 			if (LOG) {
 				System.out.println(stealer + " stole from last victim "
 						+ stealer.victim);
 			}
+			stealer.stats.stealCnt++;
+			stealer.victim.stats.robbedCnt++;
 			return t;
 		}
 		Worker[] ws = workers;
 		for (int i = 0; i < ws.length; i++) {
-			if ((t = ws[i].pollLast()) != null) {
+			if ((t = ws[i].steal()) != null) {
 				if (LOG) {
 					System.out.println(stealer + " stole from " + ws[i]);
 				}
 				stealer.victim = ws[i];
+				stealer.stats.stealCnt++;
+				stealer.victim.stats.robbedCnt++;
 				return t;
 			}
 		}
@@ -105,39 +112,53 @@ public class Pool {
 			LockSupport.unpark(w);
 		} else {
 			// TODO choose random active worker
-			workers[0].push(task);
+			w = workers[0];
+			w.push(task);
 		}
 		return task;
+	}
+
+	public boolean dispatch(Task task) {
+		Worker w = inactive.poll();
+		if (w != null) {
+			w.push(task);
+			LockSupport.unpark(w);
+			return true;
+		} else {
+//			Thread me;
+//			if ((me = Thread.currentThread()) instanceof Worker) {
+//				for (int i = 0; i < size; i++) {
+//					if (workers[i] != me) {
+//						workers[i].push(task);
+//						return true;
+//					}
+//				}
+//				return false;
+//			}
+//			// TODO choose random active worker
+//			workers[0].push(task);
+//			return true;
+			w = workers[0];
+			w.push(task);
+			return (w != Thread.currentThread());
+		}
 	}
 
 	void join(Worker w, Task join) {
 		Task t;
 		int s;
+		int retry = 0;
 		while ((s = join.status) <= 0) {
 			if ((t = w.poll()) != null) {
-				// process least recently forked local task
-				t.exec();
+				exec(w, t);
+				retry = 0;
 			} else if ((t = stealTask(w)) != null) {
 				// process stolen task from other thread
 				t.exec();
-			} else {
-				LockSupport.parkNanos(1000);
-			}
-		}
-	}
-
-	void joinLast(Worker w, Task join) {
-		Task t;
-		int s;
-		while ((s = join.status) <= 0) {
-			if ((t = w.pollLast()) != null) {
-				// process most recently forked local task
-				t.exec();
-			} else if ((t = stealTask(w)) != null) {
-				// process stolen task from other thread
-				t.exec();
-			} else {
-				LockSupport.parkNanos(1000);
+				retry = 0;
+			} else if (++retry == 16) {
+				LockSupport.parkNanos(100);
+				retry = 0;
 			}
 		}
 	}
@@ -147,22 +168,45 @@ public class Pool {
 		while (!w.isTerminate()) {
 			Task t;
 			if ((t = w.poll()) != null) {
-				t.exec();
+				exec(w, t);
+				retry = 0;
 			} else if ((t = stealTask(w)) != null) {
 				t.exec();
-			} else if (++retry == 64) {
-				if (LOG) {
-					System.out.println(w + " goes parking");
-				}
-				inactive.push(w);
-				LockSupport.park();
 				retry = 0;
-				if (LOG) {
-					System.out.println(w + " unparking");
+			} else if (++retry == 64) {
+				inactive.add(w);
+				if ((t = w.poll()) == null) {
+					if (LOG) {
+						System.out.println(w + " goes parking");
+					}
+					LockSupport.park();
+					if (LOG) {
+						System.out.println(w + " unparking");
+					}					
+				} else {
+					exec(w, t);
 				}
+				retry = 0;				
 			} else if (retry % 16 == 0) {
-				LockSupport.parkNanos(1000);
+				LockSupport.parkNanos(100);
 			}
 		}
+	}
+
+	private void exec(Worker w, Task t) {
+		long start = System.currentTimeMillis();
+		t.exec();
+		long end = System.currentTimeMillis();
+		w.stats.execCnt++;
+		w.stats.execTime += (end - start);
+	}
+
+	public List<WorkerStats> getStats() {
+		ArrayList<WorkerStats> stats = new ArrayList<WorkerStats>(
+				workers.length);
+		for (Worker w : workers) {
+			stats.add(w.stats);
+		}
+		return stats;
 	}
 }

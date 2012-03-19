@@ -101,16 +101,6 @@ public abstract class Task {
 		return (s > 0);
 	}
 
-	protected void joinLast() {
-		Thread me;
-		if ((me = Thread.currentThread()) instanceof Worker) {
-			Worker w = (Worker) me;
-			w.joinLast(this);
-		} else {
-			externalWaitForFinish();
-		}
-	}
-
 	public void waitForFinish() {
 		externalWaitForFinish();
 	}

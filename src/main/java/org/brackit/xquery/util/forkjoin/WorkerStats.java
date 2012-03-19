@@ -17,8 +17,8 @@
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
  * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
  * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
  * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
@@ -28,18 +28,37 @@
 package org.brackit.xquery.util.forkjoin;
 
 /**
- * 
  * @author Sebastian Baechle
- *
+ * 
  */
-public interface Deque<E> {
-	public void add(E t);
+public class WorkerStats {
+	private final long threadid;
+	int joinCnt;
+	int execCnt;
+	int forkCnt;
+	int stealCnt;
+	int robbedCnt;
+	int adoptCnt;
+	long execTime;
 
-	public void push(E t);
+	public WorkerStats(long threadid) {
+		this.threadid = this.threadid;
+	}
 
-	public E poll();
+	public String toString() {
+		return String
+				.format("%s: joinCnt=%s\texecCnt=%s\tforkCnt=%s\tstealCnt=%s\trobbedCnt=%s\tadoptCnt=%s\texecTime=%sms",
+						threadid, joinCnt, execCnt, forkCnt, stealCnt,
+						robbedCnt, adoptCnt, execTime);
+	}
 
-	public E pollLast();
-
-	public int size();
+	public void reset() {
+		joinCnt = 0;
+		execCnt = 0;
+		forkCnt = 0;
+		stealCnt = 0;
+		robbedCnt = 0;
+		adoptCnt = 0;
+		execTime = 0;
+	}
 }

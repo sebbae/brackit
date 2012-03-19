@@ -38,14 +38,17 @@ public class Worker extends Thread {
 	private volatile Deque<Task> deque;
 	private volatile boolean terminate;
 	Worker victim;
+	final WorkerStats stats;
 
 	protected Worker(Pool pool, int no) {
 		super("FJWorker:" + no);
+		this.stats = new WorkerStats(getId());
 		this.pool = pool;
-		this.deque = new CASDeque<Task>();
+		this.deque = new SyncDeque<Task>();
 	}
 
 	void fork(Task task) {
+		stats.forkCnt++;
 		// System.out.println("FORK " + task);
 		deque.push(task);
 		pool.signalWork();
@@ -53,8 +56,9 @@ public class Worker extends Thread {
 
 	public void adopt(Deque<Task> queue) {
 		boolean adopted = false;
-		for (Task t = queue.poll(); t != null; t = queue.poll()) {
+		for (Task t = queue.poll(); t != null; t = queue.poll()) {			
 			deque.add(t);
+			stats.adoptCnt++;
 			adopted = true;
 		}
 		if (adopted) {
@@ -75,6 +79,10 @@ public class Worker extends Thread {
 	Task pollLast() {
 		return deque.pollLast();
 	}
+	
+	Task steal() {
+		return (deque.size() > 1) ? deque.pollLast() : null;
+	}
 
 	@Override
 	public void run() {
@@ -82,11 +90,8 @@ public class Worker extends Thread {
 	}
 
 	void join(Task t) {
+		stats.joinCnt++;
 		pool.join(this, t);
-	}
-
-	void joinLast(Task t) {
-		pool.joinLast(this, t);
 	}
 
 	public String toString() {
@@ -98,7 +103,7 @@ public class Worker extends Thread {
 	}
 
 	public void dropQueue() {
-		deque = new CASDeque<Task>();
+		deque = new SyncDeque<Task>();
 	}
 
 	boolean isTerminate() {

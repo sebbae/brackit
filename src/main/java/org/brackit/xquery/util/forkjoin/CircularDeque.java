@@ -81,6 +81,14 @@ public class CircularDeque<E> implements Deque<E> {
 	CircularDeque() {
 		activeArray = new CircularArray<E>(INITIAL_CAPACITY);
 	}
+	
+	CircularDeque(int maxCapacity) {
+		int c = 1;
+		while (c < maxCapacity) {
+			c <<= 1;
+		}
+		activeArray = new CircularArray<E>(c);
+	}
 
 	@SuppressWarnings("unchecked")
 	public void add(E o) {
@@ -141,5 +149,12 @@ public class CircularDeque<E> implements Deque<E> {
 		if (!UPDATER.compareAndSet(this, t, t + 1))
 			return null;
 		return o;
+	}
+
+	@Override
+	public int size() {
+		long t = this.top;
+		long b = this.bottom;
+		return (int) (b - t);
 	}
 }
