@@ -32,19 +32,9 @@ import java.util.List;
 
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.compiler.AST;
-import org.brackit.xquery.compiler.optimizer.walker.BindingPushup;
-import org.brackit.xquery.compiler.optimizer.walker.ConjunctionSplitting;
 import org.brackit.xquery.compiler.optimizer.walker.DoSNStepMerger;
-import org.brackit.xquery.compiler.optimizer.walker.ExtractFLWOR;
-import org.brackit.xquery.compiler.optimizer.walker.JoinRewriter;
-import org.brackit.xquery.compiler.optimizer.walker.JoinSortElimination;
-import org.brackit.xquery.compiler.optimizer.walker.LetBindLift;
-import org.brackit.xquery.compiler.optimizer.walker.LetVariableRefPullup;
 import org.brackit.xquery.compiler.optimizer.walker.OrderForGroupBy;
 import org.brackit.xquery.compiler.optimizer.walker.PathDDOElimination;
-import org.brackit.xquery.compiler.optimizer.walker.PredicateConjunction;
-import org.brackit.xquery.compiler.optimizer.walker.SelectPushdown;
-import org.brackit.xquery.compiler.optimizer.walker.UnnestRewriter;
 import org.brackit.xquery.module.StaticContext;
 import org.brackit.xquery.util.Cfg;
 
@@ -54,33 +44,25 @@ import org.brackit.xquery.util.Cfg;
  */
 public class DefaultOptimizer implements Optimizer {
 
-	public static final String VARIABLE_PULLUP_CFG = "org.brackit.xquery.variablePullup";
-
 	public static final String JOIN_DETECTION_CFG = "org.brackit.xquery.joinDetection";
 
 	public static final String UNNEST_CFG = "org.brackit.xquery.unnest";
 
 	public static boolean UNNEST = Cfg.asBool(UNNEST_CFG, true);
 
-	public static boolean VARIABLE_PULLUP = Cfg.asBool(
-			VARIABLE_PULLUP_CFG, false);
-
 	public static boolean JOIN_DETECTION = Cfg.asBool(JOIN_DETECTION_CFG,
 			true);
 
-	private List<Stage> stages = new ArrayList<Stage>();
+	protected final List<Stage> stages;
 
 	public DefaultOptimizer() {
+		stages = new ArrayList<Stage>();
 		stages.add(new Simplification());
-		stages.add(new Pipelining());
-		stages.add(new Reordering());
-		if (UNNEST) {
-			stages.add(new Unnest());
-		}
-		if (JOIN_DETECTION) {
-			stages.add(new JoinRecognition());
-		}
 		stages.add(new Finalize());
+	}
+	
+	protected DefaultOptimizer(List<Stage> stages) {
+		this.stages = stages;
 	}
 
 	@Override
@@ -96,56 +78,16 @@ public class DefaultOptimizer implements Optimizer {
 		return ast;
 	}
 
-	private static class Simplification implements Stage {
+	protected static class Simplification implements Stage {
 		public AST rewrite(StaticContext sctx, AST ast) {
 			ast = new DoSNStepMerger().walk(ast);
 			ast = new OrderForGroupBy().walk(ast);
-			if (VARIABLE_PULLUP) {
-				ast = new LetVariableRefPullup().walk(ast);
-			}
-			ast = new ExtractFLWOR().walk(ast);
 			return ast;
 		}
 	}
 
-	private static class Pipelining implements Stage {
+	protected static class Finalize implements Stage {
 		public AST rewrite(StaticContext sctx, AST ast) throws QueryException {
-			ast = new UnnestRewriter().walk(ast);
-			return ast;
-		}
-	}
-	
-	private static class Reordering implements Stage {
-		public AST rewrite(StaticContext sctx, AST ast) throws QueryException {
-			ast = new ConjunctionSplitting().walk(ast);
-			ast = new SelectPushdown().walk(ast);
-			ast = new BindingPushup().walk(ast);
-			return ast;
-		}
-	}
-
-	private static class JoinRecognition implements Stage {
-		public AST rewrite(StaticContext sctx, AST ast) throws QueryException {
-			ast = new JoinRewriter().walk(ast);
-//			ast = new JoinTree().walk(ast);
-//			ast = new JoinTree().walk(ast);
-			ast = new JoinSortElimination().walk(ast);
-//			ast = new LeftJoinGroupEmission().walk(ast);
-			return ast;
-		}
-	}
-	
-	private static class Unnest implements Stage {
-		public AST rewrite(StaticContext sctx, AST ast) throws QueryException {
-			ast = new LetBindLift().walk(ast);
-//			ast = new BindingPushupAfterLifting().walk(ast); // 2nd chance for pushing
-			return ast;
-		}
-	}
-	
-	private static class Finalize implements Stage {
-		public AST rewrite(StaticContext sctx, AST ast) throws QueryException {
-			ast = new PredicateConjunction().walk(ast);
 			ast = new PathDDOElimination(sctx).walk(ast);
 			return ast;
 		}

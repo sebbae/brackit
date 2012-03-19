@@ -25,41 +25,48 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.brackit.xquery.compiler.optimizer.walker;
+package org.brackit.xquery.function.bit;
 
-import static org.brackit.xquery.compiler.XQ.AndExpr;
-import static org.brackit.xquery.compiler.XQ.Selection;
-
-import org.brackit.xquery.compiler.AST;
+import org.brackit.xquery.QueryContext;
+import org.brackit.xquery.QueryException;
+import org.brackit.xquery.atomic.Atomic;
+import org.brackit.xquery.atomic.Bool;
+import org.brackit.xquery.atomic.QNm;
+import org.brackit.xquery.function.AbstractFunction;
+import org.brackit.xquery.module.Namespaces;
+import org.brackit.xquery.module.StaticContext;
+import org.brackit.xquery.xdm.Sequence;
+import org.brackit.xquery.xdm.Signature;
+import org.brackit.xquery.xdm.type.AtomicType;
+import org.brackit.xquery.xdm.type.Cardinality;
+import org.brackit.xquery.xdm.type.SequenceType;
 
 /**
- * Merges sequences of select predicates into a single conjunctions.
  * 
- * @author Sebastian Baechle
+ * @author Henrique Valer
  * 
  */
-public class PredicateConjunction extends Walker {
+public class Mkdir extends AbstractFunction {
 
-	@Override
-	protected AST visit(AST select) {
-		if (select.getType() != Selection) {
-			return select;
-		}		
-		AST input = select.getChild(0);
-		if (input.getType() != Selection) {
-			return select;
-		}
-		while (input.getType() == Selection) {
-			AST predicate = select.getChild(1);
-			AST tmp = new AST(AndExpr);			
-			tmp.addChild(input.getChild(1));
-			tmp.addChild(predicate);
-			input = input.getChild(0);
-			select.replaceChild(1, tmp);
-			select.replaceChild(0, input);
-		}
+	public static final QNm DEFAULT_NAME = new QNm(Namespaces.BIT_NSURI,
+			Namespaces.BIT_PREFIX, "mkdir");
 
-		return select;
+	public Mkdir() {
+		super(Mkdir.DEFAULT_NAME, new Signature(new SequenceType(
+				AtomicType.STR, Cardinality.One), new SequenceType(
+				AtomicType.STR, Cardinality.One)), true);
 	}
 
+	@Override
+	public Sequence execute(StaticContext sctx, QueryContext ctx,
+			Sequence[] args) throws QueryException {
+		String vDirName = ((Atomic) args[0]).stringValue();
+		try {
+			ctx.getStore().makeDir(vDirName);
+			return Bool.TRUE;
+		} catch (Exception e) {
+			throw new QueryException(e, BitError.BIT_MAKEDIRECTORY_INT_ERROR,
+					e.getMessage());
+		}
+	}
 }

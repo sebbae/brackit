@@ -42,5 +42,10 @@ public interface Store {
 	public Collection<?> create(String name, SubtreeParser parser)
 			throws DocumentException;
 
+	public Collection<?> create(String name, Stream<SubtreeParser> parsers)
+			throws DocumentException;
+
 	public void drop(String name) throws DocumentException;
+
+	public void makeDir(String path) throws DocumentException;
 }

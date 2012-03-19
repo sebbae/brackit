@@ -32,10 +32,17 @@ import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.atomic.Str;
 import org.brackit.xquery.node.parser.NavigationalSubtreeParser;
 import org.brackit.xquery.node.parser.SubtreeParser;
+import org.brackit.xquery.xdm.Collection;
 import org.brackit.xquery.xdm.DocumentException;
 import org.brackit.xquery.xdm.Node;
 import org.brackit.xquery.xdm.NodeFactory;
+import org.brackit.xquery.xdm.Stream;
 
+/**
+ * 
+ * @author Sebastian Baechle
+ * 
+ */
 public class D2NodeFactory implements NodeFactory<D2Node> {
 	@Override
 	public D2Node attribute(QNm name, Atomic value) throws DocumentException {
@@ -77,5 +84,35 @@ public class D2NodeFactory implements NodeFactory<D2Node> {
 		D2NodeBuilder handler = new D2NodeBuilder();
 		parser.parse(handler);
 		return handler.root();
+	}
+
+	@Override
+	public Collection<D2Node> collection(String name, SubtreeParser parser)
+			throws DocumentException {
+		D2NodeCollection coll = new D2NodeCollection(name);
+		D2NodeBuilder builder = new D2NodeBuilder(coll);
+		parser.parse(builder);
+		return coll;
+	}
+
+	@Override
+	public Collection<D2Node> collection(String name,
+			Stream<SubtreeParser> parsers) throws DocumentException {
+		D2NodeCollection coll = new D2NodeCollection(name);
+		D2NodeBuilder builder = new D2NodeBuilder(coll);
+		try {
+			SubtreeParser parser;
+			while ((parser = parsers.next()) != null) {
+				parser.parse(builder);
+			}
+		} finally {
+			parsers.close();
+		}
+		return coll;
+	}
+
+	@Override
+	public Collection<D2Node> collection(String name) throws DocumentException {
+		return new D2NodeCollection(name);
 	}
 }

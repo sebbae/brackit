@@ -35,12 +35,14 @@ import java.util.HashMap;
 import org.brackit.xquery.node.d2linked.D2NodeFactory;
 import org.brackit.xquery.node.parser.DocumentParser;
 import org.brackit.xquery.node.parser.SubtreeParser;
-import org.brackit.xquery.util.URIHandler;
+import org.brackit.xquery.util.io.URIHandler;
 import org.brackit.xquery.xdm.Collection;
 import org.brackit.xquery.xdm.DocumentException;
 import org.brackit.xquery.xdm.Node;
 import org.brackit.xquery.xdm.NodeFactory;
+import org.brackit.xquery.xdm.OperationNotSupportedException;
 import org.brackit.xquery.xdm.Store;
+import org.brackit.xquery.xdm.Stream;
 
 /**
  * 
@@ -52,14 +54,23 @@ public class SimpleStore implements Store {
 
 	@Override
 	public Collection<?> create(String name) throws DocumentException {
-		throw new DocumentException(
-				"Multi-document collections are not supported");
+		Collection<?> coll = getNodeFactory().collection(name);
+		docs.put(name, coll);
+		return coll;
 	}
 
 	@Override
 	public Collection<?> create(String name, SubtreeParser parser)
 			throws DocumentException {
-		Collection<?> coll = getNodeFactory().build(parser).getCollection();
+		Collection<?> coll = getNodeFactory().collection(name, parser);
+		docs.put(name, coll);
+		return coll;
+	}
+
+	@Override
+	public Collection<?> create(String name, Stream<SubtreeParser> parsers)
+			throws DocumentException {
+		Collection<?> coll = getNodeFactory().collection(name, parsers);
 		docs.put(name, coll);
 		return coll;
 	}
@@ -91,5 +102,10 @@ public class SimpleStore implements Store {
 
 	protected NodeFactory<?> getNodeFactory() {
 		return new D2NodeFactory();
+	}
+
+	@Override
+	public void makeDir(String path) throws DocumentException {
+		throw new OperationNotSupportedException();
 	}
 }

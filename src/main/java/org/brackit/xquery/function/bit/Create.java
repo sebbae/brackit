@@ -25,64 +25,55 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.brackit.xquery.compiler.optimizer.walker;
+package org.brackit.xquery.function.bit;
 
-import static org.brackit.xquery.compiler.XQ.Count;
-import static org.brackit.xquery.compiler.XQ.GroupBy;
-import static org.brackit.xquery.compiler.XQ.Selection;
-import static org.brackit.xquery.compiler.XQ.Start;
-
-import java.util.HashSet;
-
-import org.brackit.xquery.compiler.AST;
+import org.brackit.xquery.QueryContext;
+import org.brackit.xquery.QueryException;
+import org.brackit.xquery.atomic.Atomic;
+import org.brackit.xquery.atomic.QNm;
+import org.brackit.xquery.function.AbstractFunction;
+import org.brackit.xquery.module.Namespaces;
+import org.brackit.xquery.module.StaticContext;
+import org.brackit.xquery.util.annotation.FunctionAnnotation;
+import org.brackit.xquery.xdm.Sequence;
+import org.brackit.xquery.xdm.Signature;
+import org.brackit.xquery.xdm.type.AtomicType;
+import org.brackit.xquery.xdm.type.Cardinality;
+import org.brackit.xquery.xdm.type.ElementType;
+import org.brackit.xquery.xdm.type.SequenceType;
 
 /**
- * Push select operators downstream in a pipeline to reduce
- * number of tuples in a pipeline.
  * 
- * @author Sebastian Baechle
+ * @author Henrique Valer
  * 
  */
-public class SelectPushdown extends PipelineVarTracker {
+@FunctionAnnotation(description = "Creates a collection.", parameters = "$name")
+public class Create extends AbstractFunction {
 
-	private HashSet<AST> pushed = new HashSet<AST>();
+	public static final QNm DEFAULT_NAME = new QNm(Namespaces.BIT_NSURI,
+			Namespaces.BIT_PREFIX, "create");
 
-	@Override
-	protected AST prepare(AST root) {
-		collectVars(root);
-		return root;
+	public Create() {
+		this(DEFAULT_NAME);
+	}
+
+	public Create(QNm name) {
+		super(name, new Signature(new SequenceType(ElementType.ELEMENT,
+				Cardinality.ZeroOrOne), new SequenceType(AtomicType.STR,
+				Cardinality.One)), true);
 	}
 
 	@Override
-	protected AST visit(AST node) {
-		if (node.getType() != Selection) {
-			return node;
+	public Sequence execute(StaticContext sctx, QueryContext ctx,
+			Sequence[] args) throws QueryException {
+		try {
+			String collection = ((Atomic) args[0]).stringValue();
+			ctx.getStore().create(collection);
+			// TODO
+			return null;
+		} catch (Exception e) {
+			throw new QueryException(e,
+					BitError.BIT_CREATECOLLECTION_INT_ERROR, e.getMessage());
 		}
-		if (pushed.contains(node)) {
-			return node;
-		}
-		VarRef refs = varRefs(node.getChild(1), null);
-		final AST parent = node.getParent();
-		final AST in = node.getChild(0);
-		AST tmp = in;
-		while (tmp.getType() != Start) {
-			if (tmp.getType() == GroupBy) {
-				// TODO Pushdown is OK if bindings are grouping keys
-				break;
-			} else if (tmp.getType() == Count) {
-				break;
-			} else if ((refs != null) && declares(tmp, refs.first())) {
-				break;
-			}
-			tmp = tmp.getChild(0);
-		}
-		if (tmp == in) {
-			return node;
-		}
-		tmp.getParent().replaceChild(0, node);
-		node.replaceChild(0, tmp);
-		parent.replaceChild(0, in);
-		pushed.add(node);
-		return in;
 	}
 }

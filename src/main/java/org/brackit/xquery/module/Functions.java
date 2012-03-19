@@ -92,6 +92,7 @@ import org.brackit.xquery.function.fn.SubstringRelative;
 import org.brackit.xquery.function.fn.SumAvg;
 import org.brackit.xquery.function.fn.Trace;
 import org.brackit.xquery.function.fn.Unordered;
+import org.brackit.xquery.util.Regex;
 import org.brackit.xquery.xdm.Function;
 import org.brackit.xquery.xdm.Signature;
 import org.brackit.xquery.xdm.Type;
@@ -160,7 +161,10 @@ public class Functions {
 		predefine(new BaseURI(new QNm(Namespaces.FN_NSURI,
 				Namespaces.FN_PREFIX, "base-uri"), new Signature(
 				new SequenceType(AtomicType.AURI, Cardinality.ZeroOrOne),
-				false, true)));
+				false, AnyNodeType.ANY_NODE)));
+		predefine(new Data(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
+				"data"), new Signature(new SequenceType(AtomicType.ANA,
+				Cardinality.ZeroOrMany), false, AnyNodeType.ANY_NODE)));
 		predefine(new Data(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
 				"data"), new Signature(new SequenceType(AtomicType.ANA,
 				Cardinality.ZeroOrMany), new SequenceType(AnyItemType.ANY,
@@ -171,7 +175,8 @@ public class Functions {
 				new SequenceType(AnyItemType.ANY, Cardinality.ZeroOrOne))));
 		predefine(new StringValue(new QNm(Namespaces.FN_NSURI,
 				Namespaces.FN_PREFIX, "string"), new Signature(
-				new SequenceType(AtomicType.STR, Cardinality.One), false, true)));
+				new SequenceType(AtomicType.STR, Cardinality.One), false,
+				AnyItemType.ANY)));
 		predefine(new DocumentURI(new QNm(Namespaces.FN_NSURI,
 				Namespaces.FN_PREFIX, "document-uri"), new Signature(
 				new SequenceType(AtomicType.AURI, Cardinality.ZeroOrOne),
@@ -276,7 +281,7 @@ public class Functions {
 		// See XQuery Functions and Operators 7.4 Functions on String Values
 		predefine(new Concat(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
 				"concat"), new Signature(new SequenceType(AtomicType.ANA,
-				Cardinality.One), true, false, new SequenceType(AtomicType.ANA,
+				Cardinality.One), true, null, new SequenceType(AtomicType.ANA,
 				Cardinality.ZeroOrOne), new SequenceType(AtomicType.ANA,
 				Cardinality.ZeroOrOne), new SequenceType(AtomicType.ANA,
 				Cardinality.ZeroOrOne))));
@@ -294,7 +299,8 @@ public class Functions {
 				new SequenceType(AtomicType.STR, Cardinality.ZeroOrOne))));
 		predefine(new StringLength(new QNm(Namespaces.FN_NSURI,
 				Namespaces.FN_PREFIX, "string-length"), new Signature(
-				new SequenceType(AtomicType.INT, Cardinality.One), false, true)));
+				new SequenceType(AtomicType.INT, Cardinality.One), false,
+				AtomicType.STR)));
 		predefine(new StringJoin(new QNm(Namespaces.FN_NSURI,
 				Namespaces.FN_PREFIX, "string-join"), new Signature(
 				new SequenceType(AtomicType.STR, Cardinality.One),
@@ -323,7 +329,8 @@ public class Functions {
 				new SequenceType(AtomicType.STR, Cardinality.ZeroOrOne))));
 		predefine(new StringNormalize(new QNm(Namespaces.FN_NSURI,
 				Namespaces.FN_PREFIX, "normalize-space"), new Signature(
-				new SequenceType(AtomicType.STR, Cardinality.One), false, true)));
+				new SequenceType(AtomicType.STR, Cardinality.One), false,
+				AtomicType.STR)));
 		predefine(new StringCase(new QNm(Namespaces.FN_NSURI,
 				Namespaces.FN_PREFIX, "upper-case"), true, new Signature(
 				new SequenceType(AtomicType.STR, Cardinality.One),
@@ -435,36 +442,36 @@ public class Functions {
 		// See XQuery Functions and Operators 7.6 String Functions that Use
 		// Pattern Matching
 		predefine(new RegEx(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
-				"matches"), RegEx.Mode.MATCH, new Signature(new SequenceType(
+				"matches"), Regex.Mode.MATCH, new Signature(new SequenceType(
 				AtomicType.BOOL, Cardinality.One), new SequenceType(
 				AtomicType.STR, Cardinality.ZeroOrOne), new SequenceType(
 				AtomicType.STR, Cardinality.One))));
 		predefine(new RegEx(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
-				"matches"), RegEx.Mode.MATCH, new Signature(new SequenceType(
+				"matches"), Regex.Mode.MATCH, new Signature(new SequenceType(
 				AtomicType.BOOL, Cardinality.One), new SequenceType(
 				AtomicType.STR, Cardinality.ZeroOrOne), new SequenceType(
 				AtomicType.STR, Cardinality.One), new SequenceType(
 				AtomicType.STR, Cardinality.One))));
 		predefine(new RegEx(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
-				"replace"), RegEx.Mode.REPLACE, new Signature(new SequenceType(
+				"replace"), Regex.Mode.REPLACE, new Signature(new SequenceType(
 				AtomicType.STR, Cardinality.One), new SequenceType(
 				AtomicType.STR, Cardinality.ZeroOrOne), new SequenceType(
 				AtomicType.STR, Cardinality.One), new SequenceType(
 				AtomicType.STR, Cardinality.One))));
 		predefine(new RegEx(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
-				"replace"), RegEx.Mode.REPLACE, new Signature(new SequenceType(
+				"replace"), Regex.Mode.REPLACE, new Signature(new SequenceType(
 				AtomicType.STR, Cardinality.One), new SequenceType(
 				AtomicType.STR, Cardinality.ZeroOrOne), new SequenceType(
 				AtomicType.STR, Cardinality.One), new SequenceType(
 				AtomicType.STR, Cardinality.One), new SequenceType(
 				AtomicType.STR, Cardinality.One))));
 		predefine(new RegEx(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
-				"tokenize"), RegEx.Mode.TOKENIZE, new Signature(
+				"tokenize"), Regex.Mode.TOKENIZE, new Signature(
 				new SequenceType(AtomicType.STR, Cardinality.ZeroOrMany),
 				new SequenceType(AtomicType.STR, Cardinality.ZeroOrOne),
 				new SequenceType(AtomicType.STR, Cardinality.One))));
 		predefine(new RegEx(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
-				"tokenize"), RegEx.Mode.TOKENIZE, new Signature(
+				"tokenize"), Regex.Mode.TOKENIZE, new Signature(
 				new SequenceType(AtomicType.STR, Cardinality.ZeroOrMany),
 				new SequenceType(AtomicType.STR, Cardinality.ZeroOrOne),
 				new SequenceType(AtomicType.STR, Cardinality.One),
@@ -680,34 +687,37 @@ public class Functions {
 		// Nodes
 		predefine(new Name(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
 				"name"), Name.Mode.NAME, new Signature(new SequenceType(
-				AtomicType.STR, Cardinality.One), false, true)));
+				AtomicType.STR, Cardinality.One), false, AnyNodeType.ANY_NODE)));
 		predefine(new Name(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
 				"name"), Name.Mode.NAME, new Signature(new SequenceType(
 				AtomicType.STR, Cardinality.One), new SequenceType(
 				AnyNodeType.ANY_NODE, Cardinality.ZeroOrOne))));
 		predefine(new Name(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
 				"local-name"), Name.Mode.LOCAL_NAME, new Signature(
-				new SequenceType(AtomicType.STR, Cardinality.One), false, true)));
+				new SequenceType(AtomicType.STR, Cardinality.One), false,
+				AnyNodeType.ANY_NODE)));
 		predefine(new Name(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
 				"local-name"), Name.Mode.LOCAL_NAME, new Signature(
 				new SequenceType(AtomicType.STR, Cardinality.One),
 				new SequenceType(AnyNodeType.ANY_NODE, Cardinality.ZeroOrOne))));
 		predefine(new Name(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
 				"namespace-uri"), Name.Mode.NAMESPACE_URI, new Signature(
-				new SequenceType(AtomicType.AURI, Cardinality.One), false, true)));
+				new SequenceType(AtomicType.AURI, Cardinality.One), false,
+				AnyNodeType.ANY_NODE)));
 		predefine(new Name(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
 				"namespace-uri"), Name.Mode.NAMESPACE_URI, new Signature(
 				new SequenceType(AtomicType.AURI, Cardinality.One),
 				new SequenceType(AnyNodeType.ANY_NODE, Cardinality.ZeroOrOne))));
 		predefine(new Number(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
 				"number"), new Signature(new SequenceType(AtomicType.DBL,
-				Cardinality.One), false, true)));
+				Cardinality.One), false, AnyItemType.ANY)));
 		predefine(new Number(new QNm(Namespaces.FN_NSURI, Namespaces.FN_PREFIX,
 				"number"), new Signature(new SequenceType(AtomicType.DBL,
 				Cardinality.One), new SequenceType(AtomicType.ANA,
 				Cardinality.ZeroOrOne))));
 		predefine(new Root(FN_ROOT, new Signature(new SequenceType(
-				AnyNodeType.ANY_NODE, Cardinality.ZeroOrOne), false, true)));
+				AnyNodeType.ANY_NODE, Cardinality.ZeroOrOne), false,
+				AnyNodeType.ANY_NODE)));
 		predefine(new Root(FN_ROOT, new Signature(new SequenceType(
 				AnyNodeType.ANY_NODE, Cardinality.ZeroOrOne), new SequenceType(
 				AnyNodeType.ANY_NODE, Cardinality.ZeroOrOne))));
@@ -985,6 +995,10 @@ public class Functions {
 
 	public Map<QNm, Function[]> getDeclaredFunctions() {
 		return Collections.unmodifiableMap(functions);
+	}
+
+	public Map<QNm, Function[]> getPredefinedFunctions() {
+		return Collections.unmodifiableMap(predefined);
 	}
 
 	public static void predefine(Function function) {

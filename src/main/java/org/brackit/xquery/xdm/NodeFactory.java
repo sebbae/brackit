@@ -53,4 +53,12 @@ public interface NodeFactory<E extends Node<E>> {
 	public E copy(Node<?> source) throws DocumentException;
 
 	public E build(SubtreeParser parser) throws DocumentException;
+
+	public Collection<E> collection(String name, SubtreeParser parser)
+			throws DocumentException;
+
+	public Collection<E> collection(String name, Stream<SubtreeParser> parsers)
+			throws DocumentException;
+
+	public Collection<E> collection(String name) throws DocumentException;
 }

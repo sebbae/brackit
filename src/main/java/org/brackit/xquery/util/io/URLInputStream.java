@@ -25,75 +25,81 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.brackit.xquery.compiler.optimizer.walker;
+package org.brackit.xquery.util.io;
 
-import static org.brackit.xquery.compiler.XQ.FlowrExpr;
-import static org.brackit.xquery.compiler.XQ.LetClause;
-import static org.brackit.xquery.compiler.XQ.TypedVariableBinding;
-import static org.brackit.xquery.compiler.XQ.VariableRef;
-
-import org.brackit.xquery.atomic.QNm;
-import org.brackit.xquery.compiler.AST;
-import org.brackit.xquery.compiler.XQ;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLConnection;
 
 /**
+ * RAII-style wrapper for {@link InputStream InputStreams} basing on the
+ * standard {@link URLConnection}.
  * 
  * @author Sebastian Baechle
  * 
  */
-public class ExtractFLWOR extends Walker {
+public class URLInputStream extends InputStream {
+	private final URLConnection conn;
+	private final InputStream in;
 
-	private int extracedVarCount;
+	public URLInputStream(URL url) throws IOException {
+		conn = url.openConnection();
+		in = conn.getInputStream();
+	}
+
+	public URLInputStream(URL url, int timeout) throws IOException {
+		conn = url.openConnection();
+		conn.setConnectTimeout(timeout);
+		in = conn.getInputStream();
+	}
 
 	@Override
-	protected AST visit(AST node) {
-		if (node.getType() != FlowrExpr) {
-			return node;
-		}
-
-		final AST parent = node.getParent();
-		if (isFLWORClause(parent)) {
-			return node;
-		}
-		AST anc = parent;
-		while (anc != null) {
-			if (isFLWORClause(anc)) {
-				break;
-			}
-			int aType = anc.getType();
-			if ((aType == XQ.PathExpr)
-					|| (aType == XQ.StepExpr)
-					|| (aType == XQ.FilterExpr)
-					|| (aType == XQ.MapExpr)
-					|| (aType == XQ.IfExpr)) {
-				return node;
-			}
-			anc = anc.getParent();
-		}
-
-		if (anc == null) {
-			return node;
-		}
-
-		QNm varName = createVarName();
-		AST binding = new AST(TypedVariableBinding);
-		binding.addChild(new AST(XQ.Variable, varName));
-		AST letClause = new AST(LetClause);
-		letClause.addChild(binding);
-		letClause.addChild(node.copyTree());
-
-		AST varRef = new AST(VariableRef, varName);
-		parent.replaceChild(node.getChildIndex(), varRef);
-		anc.getParent().insertChild(anc.getChildIndex(), letClause);
-		return letClause;
+	public int read() throws IOException {
+		return in.read();
 	}
 
-	private boolean isFLWORClause(AST anc) {
-		AST grandAnc = anc.getParent();
-		return (grandAnc != null) && (grandAnc.getType() == FlowrExpr);
+	@Override
+	public int read(byte[] b) throws IOException {
+		return in.read(b);
 	}
 
-	private QNm createVarName() {
-		return new QNm("_extracted;" + (extracedVarCount++));
+	@Override
+	public int read(byte[] b, int off, int len) throws IOException {
+		return in.read(b, off, len);
+	}
+
+	@Override
+	public long skip(long n) throws IOException {
+		return in.skip(n);
+	}
+
+	@Override
+	public int available() throws IOException {
+		return in.available();
+	}
+
+	@Override
+	public void mark(int readlimit) {
+		in.mark(readlimit);
+	}
+
+	@Override
+	public void reset() throws IOException {
+		in.reset();
+	}
+
+	@Override
+	public boolean markSupported() {
+		return in.markSupported();
+	}
+
+	@Override
+	public void close() throws IOException {
+		in.close();
+		if (conn instanceof HttpURLConnection) {
+			((HttpURLConnection) conn).disconnect();
+		}
 	}
 }

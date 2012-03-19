@@ -80,12 +80,6 @@ public class Ordering implements Comparator<Tuple> {
 				}
 			}
 		}
-		if (t == null) {
-			throw new NullPointerException();
-		}
-		if (keys == null) {
-			throw new NullPointerException();
-		}
 		sort.add(t.concat(keys));
 	}
 

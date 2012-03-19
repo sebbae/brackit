@@ -41,19 +41,22 @@ import org.brackit.xquery.compiler.parser.XQParser;
 import org.brackit.xquery.compiler.translator.BlockTranslator;
 import org.brackit.xquery.compiler.translator.TopDownTranslator;
 import org.brackit.xquery.compiler.translator.Translator;
+import org.brackit.xquery.function.bit.Create;
+import org.brackit.xquery.function.bit.Drop;
+import org.brackit.xquery.function.bit.Eval;
 import org.brackit.xquery.function.bit.Every;
-import org.brackit.xquery.function.bit.GetForkBuffer;
-import org.brackit.xquery.function.bit.GetPoolSize;
-import org.brackit.xquery.function.bit.GetSerializerPermits;
+import org.brackit.xquery.function.bit.Exists;
+import org.brackit.xquery.function.bit.Load;
+import org.brackit.xquery.function.bit.Mkdir;
 import org.brackit.xquery.function.bit.Parse;
-import org.brackit.xquery.function.bit.Put;
 import org.brackit.xquery.function.bit.Serialize;
-import org.brackit.xquery.function.bit.SetForkBuffer;
-import org.brackit.xquery.function.bit.SetPoolSize;
-import org.brackit.xquery.function.bit.SetSerializerPermits;
 import org.brackit.xquery.function.bit.Silent;
 import org.brackit.xquery.function.bit.Some;
+import org.brackit.xquery.function.bit.Store;
+import org.brackit.xquery.function.io.Ls;
+import org.brackit.xquery.function.io.Read;
 import org.brackit.xquery.function.io.Readline;
+import org.brackit.xquery.function.io.Write;
 import org.brackit.xquery.function.io.Writeline;
 import org.brackit.xquery.module.Functions;
 import org.brackit.xquery.module.Module;
@@ -75,7 +78,7 @@ public class CompileChain {
 
 	public static final QNm PUSH_EVAL_OPTION = new QNm(Namespaces.BIT_NSURI,
 			Namespaces.BIT_PREFIX, "push-evaluation");
-
+	
 	public static final Every BIT_EVERY_FUNC = new Every(new QNm(
 			Namespaces.XML_NSURI, Namespaces.BIT_PREFIX, "every"),
 			new Signature(new SequenceType(AtomicType.BOOL, Cardinality.One),
@@ -87,35 +90,49 @@ public class CompileChain {
 					new SequenceType(AnyItemType.ANY, Cardinality.ZeroOrMany)));
 
 	static {
-		Functions.predefine(BIT_SOME_FUNC);
-		Functions.predefine(BIT_EVERY_FUNC);
-		Functions.predefine(new Put(Put.PUT, new Signature(new SequenceType(
-				AtomicType.STR, Cardinality.One), new SequenceType(
-				AtomicType.STR, Cardinality.One))));
-		Functions.predefine(new Put(Put.PUT, new Signature(new SequenceType(
-				AtomicType.STR, Cardinality.One), new SequenceType(
-				AtomicType.STR, Cardinality.One), new SequenceType(
-				AtomicType.STR, Cardinality.ZeroOrOne))));
+		// IO
 		Functions.predefine(new Readline());
 		Functions.predefine(new Writeline());
+		Functions.predefine(new Read());
+		Functions.predefine(new Write());
+		Functions.predefine(new Ls(true));
+		Functions.predefine(new Ls(false));
+		// Internal
+		Functions.predefine(BIT_SOME_FUNC);
+		Functions.predefine(BIT_EVERY_FUNC);
+		// Utility
 		Functions.predefine(new Silent());
 		Functions.predefine(new Parse());
-		Functions.predefine(new SetPoolSize());
-		Functions.predefine(new GetPoolSize());
+		Functions.predefine(new Eval());
 		Functions.predefine(new Serialize());
-		Functions.predefine(new SetForkBuffer());
-		Functions.predefine(new GetForkBuffer());
-		Functions.predefine(new GetSerializerPermits());
-		Functions.predefine(new SetSerializerPermits());
+		// Storage
+		Functions.predefine(new Store(true));
+		Functions.predefine(new Store(false));
+		Functions.predefine(new Load(true));
+		Functions.predefine(new Load(false));
+		Functions.predefine(new Create());
+		Functions.predefine(new Drop());
+		Functions.predefine(new Mkdir());
+		Functions.predefine(new Exists());
 	}
 
 	final AnyURI baseURI;
+	final ModuleResolver resolver;
 
 	public CompileChain() {
-		baseURI = null;
+		this(new BaseResolver(), null);
 	}
 
 	public CompileChain(AnyURI baseURI) {
+		this(new BaseResolver(), baseURI);
+	}
+	
+	public CompileChain(ModuleResolver resolver) {
+		this(resolver, null);
+	}
+	
+	public CompileChain(ModuleResolver resolver, AnyURI baseURI) {
+		this.resolver = resolver;
 		this.baseURI = baseURI;
 	}
 
@@ -134,7 +151,7 @@ public class CompileChain {
 	}
 
 	protected ModuleResolver getModuleResolver() {
-		return new BaseResolver();
+		return resolver;
 	}
 
 	protected AST parse(String query) throws QueryException {
@@ -146,11 +163,11 @@ public class CompileChain {
 			System.out.println(String.format("Compiling:\n%s", query));
 		}
 		ModuleResolver resolver = getModuleResolver();
-		AST parsed = parse(query);
+		Analyzer analyzer = new Analyzer(resolver, baseURI, parse(query));
+		AST xquery = analyzer.getAST();
 		if (XQuery.DEBUG) {
-			DotUtil.drawDotToFile(parsed.dot(), XQuery.DEBUG_DIR, "parsed");
+			DotUtil.drawDotToFile(xquery.dot(), XQuery.DEBUG_DIR, "parsed");
 		}
-		Analyzer analyzer = new Analyzer(resolver, baseURI, parsed);
 		Module module = analyzer.getModules().get(0);
 		// optimize all targets of all modules
 		for (Target t : analyzer.getTargets()) {
@@ -166,7 +183,6 @@ public class CompileChain {
 				resolver.register(m.getTargetNS(), m);
 			}
 		}
-		AST xquery = analyzer.getAST();
 		if (XQuery.DEBUG) {
 			DotUtil.drawDotToFile(xquery.dot(), XQuery.DEBUG_DIR, "xquery");
 		}

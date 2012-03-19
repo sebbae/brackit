@@ -27,25 +27,20 @@
  */
 package org.brackit.xquery.function.bit;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintWriter;
+import java.io.PrintStream;
 
-import org.brackit.xquery.ErrorCode;
 import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
+import org.brackit.xquery.atomic.Int32;
 import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.atomic.Str;
 import org.brackit.xquery.function.AbstractFunction;
 import org.brackit.xquery.module.Namespaces;
 import org.brackit.xquery.module.StaticContext;
-import org.brackit.xquery.node.SubtreePrinter;
-import org.brackit.xquery.xdm.Item;
-import org.brackit.xquery.xdm.Iter;
-import org.brackit.xquery.xdm.Kind;
-import org.brackit.xquery.xdm.Node;
+import org.brackit.xquery.util.io.IOUtils;
+import org.brackit.xquery.util.serialize.StringSerializer;
 import org.brackit.xquery.xdm.Sequence;
 import org.brackit.xquery.xdm.Signature;
-import org.brackit.xquery.xdm.type.AnyItemType;
 import org.brackit.xquery.xdm.type.AtomicType;
 import org.brackit.xquery.xdm.type.Cardinality;
 import org.brackit.xquery.xdm.type.SequenceType;
@@ -57,67 +52,27 @@ import org.brackit.xquery.xdm.type.SequenceType;
  */
 public class Serialize extends AbstractFunction {
 
-	public static final QNm SERIALIZE = new QNm(Namespaces.BIT_NSURI,
+	public static final QNm DEFAULT_NAME = new QNm(Namespaces.BIT_NSURI,
 			Namespaces.BIT_PREFIX, "serialize");
 
 	public Serialize() {
-		super(SERIALIZE, new Signature(new SequenceType(AtomicType.STR,
-				Cardinality.One), new SequenceType(AnyItemType.ANY,
-				Cardinality.ZeroOrMany)), true);
+		this(DEFAULT_NAME);
+	}
+
+	public Serialize(QNm name) {
+		super(name, new Signature(new SequenceType(AtomicType.STR,
+				Cardinality.One), SequenceType.ITEM_SEQUENCE), true);
 	}
 
 	@Override
 	public Sequence execute(StaticContext sctx, QueryContext ctx,
 			Sequence[] args) throws QueryException {
-
-		if (args[0] == null) {
-			return Str.EMPTY;
+		Sequence sequence = args[0];
+		if (sequence == null) {
+			return Int32.ZERO;
 		}
-
-		final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		PrintWriter out = new PrintWriter(baos) {
-			public String toString() {
-				return baos.toString();
-			}
-		};
-		boolean first = true;
-		SubtreePrinter printer = new SubtreePrinter(out);
-		printer.setPrettyPrint(false);
-		printer.setAutoFlush(false);
-		Item item;
-		Iter it = args[0].iterate();
-		try {
-			while ((item = it.next()) != null) {
-				if (item instanceof Node<?>) {
-					Node<?> node = (Node<?>) item;
-					Kind kind = node.getKind();
-
-					if (kind == Kind.ATTRIBUTE) {
-						throw new QueryException(
-								ErrorCode.ERR_SERIALIZE_ATTRIBUTE_OR_NAMESPACE_NODE);
-					}
-					if (kind == Kind.DOCUMENT) {
-						node = node.getFirstChild();
-						while (node.getKind() != Kind.ELEMENT) {
-							node = node.getNextSibling();
-						}
-					}
-
-					printer.print(node);
-					first = true;
-				} else {
-					if (!first) {
-						out.write(" ");
-					}
-					out.write(item.toString());
-					first = false;
-				}
-			}
-		} finally {
-			printer.flush();
-			out.flush();
-			it.close();
-		}
-		return new Str(out.toString());
+		PrintStream buf = IOUtils.createBuffer();
+		new StringSerializer(buf).serialize(sequence);
+		return new Str(buf.toString());
 	}
 }
