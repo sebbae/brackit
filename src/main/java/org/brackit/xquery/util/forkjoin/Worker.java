@@ -90,7 +90,6 @@ public class Worker extends Thread {
 	}
 
 	void join(Task t) {
-		stats.joinCnt++;
 		pool.join(this, t);
 	}
 

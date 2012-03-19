@@ -29,6 +29,7 @@ package org.brackit.xquery.util.forkjoin;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.LockSupport;
 
@@ -44,6 +45,7 @@ import java.util.concurrent.locks.LockSupport;
  */
 public class Pool {
 	private static final boolean LOG = false;
+	private final Random rnd = new Random();
 	private final int size;
 	private final Worker[] workers;
 	private final ConcurrentLinkedQueue<Worker> inactive;
@@ -111,9 +113,9 @@ public class Pool {
 			w.push(task);
 			LockSupport.unpark(w);
 		} else {
-			// TODO choose random active worker
-			w = workers[0];
+			w = workers[rnd.nextInt(size)];
 			w.push(task);
+			LockSupport.unpark(w);
 		}
 		return task;
 	}
@@ -125,21 +127,9 @@ public class Pool {
 			LockSupport.unpark(w);
 			return true;
 		} else {
-//			Thread me;
-//			if ((me = Thread.currentThread()) instanceof Worker) {
-//				for (int i = 0; i < size; i++) {
-//					if (workers[i] != me) {
-//						workers[i].push(task);
-//						return true;
-//					}
-//				}
-//				return false;
-//			}
-//			// TODO choose random active worker
-//			workers[0].push(task);
-//			return true;
-			w = workers[0];
+			w = workers[rnd.nextInt(size)];
 			w.push(task);
+			LockSupport.unpark(w);
 			return (w != Thread.currentThread());
 		}
 	}
@@ -157,10 +147,12 @@ public class Pool {
 				t.exec();
 				retry = 0;
 			} else if (++retry == 16) {
-				LockSupport.parkNanos(100);
+				w.stats.joinParkCnt++;
+				join.park(w);
 				retry = 0;
 			}
 		}
+		w.stats.joinCnt++;
 	}
 
 	void run(Worker w) {
@@ -179,6 +171,7 @@ public class Pool {
 					if (LOG) {
 						System.out.println(w + " goes parking");
 					}
+					w.stats.parkCnt++;
 					LockSupport.park();
 					if (LOG) {
 						System.out.println(w + " unparking");
@@ -188,7 +181,7 @@ public class Pool {
 				}
 				retry = 0;				
 			} else if (retry % 16 == 0) {
-				LockSupport.parkNanos(100);
+//				LockSupport.parkNanos(100);
 			}
 		}
 	}

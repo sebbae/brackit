@@ -39,6 +39,8 @@ public class WorkerStats {
 	int stealCnt;
 	int robbedCnt;
 	int adoptCnt;
+	int parkCnt;
+	int joinParkCnt;
 	long execTime;
 
 	public WorkerStats(long threadid) {
@@ -47,9 +49,9 @@ public class WorkerStats {
 
 	public String toString() {
 		return String
-				.format("%s: joinCnt=%s\texecCnt=%s\tforkCnt=%s\tstealCnt=%s\trobbedCnt=%s\tadoptCnt=%s\texecTime=%sms",
+				.format("%s: joinCnt=%s\texecCnt=%s\tforkCnt=%s\tstealCnt=%s\trobbedCnt=%s\tadoptCnt=%s\tparkCnt=%s\tjoinParkCnt=%s\texecTime=%sms",
 						threadid, joinCnt, execCnt, forkCnt, stealCnt,
-						robbedCnt, adoptCnt, execTime);
+						robbedCnt, adoptCnt, parkCnt, joinParkCnt, execTime);
 	}
 
 	public void reset() {
@@ -60,5 +62,6 @@ public class WorkerStats {
 		robbedCnt = 0;
 		adoptCnt = 0;
 		execTime = 0;
+		parkCnt = 0;
 	}
 }

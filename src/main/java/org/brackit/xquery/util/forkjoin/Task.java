@@ -28,6 +28,7 @@
 package org.brackit.xquery.util.forkjoin;
 
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.locks.LockSupport;
 
 /**
  * 
@@ -43,6 +44,7 @@ public abstract class Task {
 	private static final int ERROR = 2;
 	private static final int NOTIFY = -1;
 
+	volatile Thread join;
 	volatile int status = 0;
 	Throwable throwable;
 
@@ -75,6 +77,9 @@ public abstract class Task {
 				if (s < 0) {
 					synchronized (this) {
 						notifyAll();
+						if (join != null) {
+							LockSupport.unpark(join);
+						}
 					}
 				}
 				return s;
@@ -118,6 +123,24 @@ public abstract class Task {
 						} catch (InterruptedException e) {
 						}
 					}
+				}
+			}
+		}
+	}
+
+	public void park(Thread t) {
+		int s = status;
+		if (s <= 0) {
+			return;
+		}
+		synchronized (this) {
+			if ((s = status) <= 0) {
+				Thread o = join;
+				join = t;
+				LockSupport.park();
+				if (o != null) {
+					join = o;
+					LockSupport.unpark(o);
 				}
 			}
 		}
