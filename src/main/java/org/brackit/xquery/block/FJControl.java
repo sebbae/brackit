@@ -36,7 +36,7 @@ import org.brackit.xquery.util.forkjoin.WorkerFactory;
  */
 public class FJControl {
 
-	public static int POOL_SIZE = 3;
+	public static int POOL_SIZE = Runtime.getRuntime().availableProcessors();
 	public static WorkerFactory FACTORY = new WorkerFactory();
 	public static Pool POOL = new Pool(POOL_SIZE, FACTORY);
 	public static int[] FORK_BUFFER = { 1, 100, 100, 100 };
