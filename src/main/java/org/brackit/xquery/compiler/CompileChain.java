@@ -27,6 +27,7 @@
  */
 package org.brackit.xquery.compiler;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import org.brackit.xquery.QueryException;
@@ -78,7 +79,7 @@ public class CompileChain {
 
 	public static final QNm PUSH_EVAL_OPTION = new QNm(Namespaces.BIT_NSURI,
 			Namespaces.BIT_PREFIX, "push-evaluation");
-	
+
 	public static final Every BIT_EVERY_FUNC = new Every(new QNm(
 			Namespaces.XML_NSURI, Namespaces.BIT_PREFIX, "every"),
 			new Signature(new SequenceType(AtomicType.BOOL, Cardinality.One),
@@ -126,28 +127,29 @@ public class CompileChain {
 	public CompileChain(AnyURI baseURI) {
 		this(new BaseResolver(), baseURI);
 	}
-	
+
 	public CompileChain(ModuleResolver resolver) {
 		this(resolver, null);
 	}
-	
+
 	public CompileChain(ModuleResolver resolver, AnyURI baseURI) {
 		this.resolver = resolver;
 		this.baseURI = baseURI;
 	}
 
 	protected Optimizer getOptimizer(Map<QNm, Str> options) {
-		Str opt = options.get(PUSH_EVAL_OPTION);
-		boolean push = ((opt != null) && Boolean
-				.parseBoolean(opt.stringValue()));
-		return new TopDownOptimizer(push);
+		return new TopDownOptimizer(options);
 	}
 
 	protected Translator getTranslator(Map<QNm, Str> options) {
 		Str opt = options.get(PUSH_EVAL_OPTION);
 		boolean push = ((opt != null) && Boolean
 				.parseBoolean(opt.stringValue()));
-		return (push) ? new BlockTranslator() : new TopDownTranslator();
+		if (push) {
+			return new BlockTranslator(options);
+		} else {
+			return new TopDownTranslator(options);
+		}
 	}
 
 	protected ModuleResolver getModuleResolver() {
@@ -158,7 +160,7 @@ public class CompileChain {
 		return new XQParser(query).parse();
 	}
 
-	public Module compile(String query) throws QueryException {
+	public Module compile(String query) throws QueryException {				
 		if (XQuery.DEBUG) {
 			System.out.println(String.format("Compiling:\n%s", query));
 		}
@@ -169,13 +171,17 @@ public class CompileChain {
 			DotUtil.drawDotToFile(xquery.dot(), XQuery.DEBUG_DIR, "parsed");
 		}
 		Module module = analyzer.getModules().get(0);
+		Map<QNm, Str> tmp = module.getOptions();
+		Map<QNm, Str> options = new HashMap<QNm, Str>();
+		options.put(PUSH_EVAL_OPTION, new Str("true"));
+		options.putAll(tmp);
 		// optimize all targets of all modules
 		for (Target t : analyzer.getTargets()) {
-			t.optimize(getOptimizer(module.getOptions()));
+			t.optimize(getOptimizer(options));
 		}
 		// translate all targets of all modules
 		for (Target t : analyzer.getTargets()) {
-			t.translate(getTranslator(module.getOptions()));
+			t.translate(getTranslator(options));
 		}
 		// everything went fine - add compiled modules to library
 		for (Module m : analyzer.getModules()) {

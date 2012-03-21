@@ -33,6 +33,7 @@ import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
 import org.brackit.xquery.compiler.translator.Reference;
+import org.brackit.xquery.util.aggregator.Aggregate;
 import org.brackit.xquery.util.aggregator.Grouping;
 
 /**
@@ -48,7 +49,7 @@ public class GroupBy implements Block {
 		public GroupBySink(int permits, Sink sink) {
 			super(permits);
 			this.sink = sink;
-			this.grp = new Grouping(groupSpecs, onlyLast);
+			this.grp = new Grouping(groupSpecs, addAggSpecs, defaultAgg, addAggs);
 		}
 
 		private GroupBySink(Semaphore sem, Sink sink, Grouping grp) {
@@ -59,7 +60,7 @@ public class GroupBy implements Block {
 
 		@Override
 		protected ChainedSink doPartition(Sink stopAt) {
-			Grouping grp = new Grouping(groupSpecs, onlyLast);
+			Grouping grp = new Grouping(groupSpecs, addAggSpecs, defaultAgg, addAggs);
 			return new GroupBySink(sem, sink.partition(stopAt), grp);
 		}
 
@@ -100,11 +101,18 @@ public class GroupBy implements Block {
 	}
 
 	final int[] groupSpecs; // positions of grouping variables
-	final boolean onlyLast;
+	final int[] addAggSpecs;
+	final Aggregate defaultAgg;
+	final Aggregate[] addAggs;
+	final boolean sequential;
 
-	public GroupBy(int groupSpecCount, boolean onlyLast) {
-		this.groupSpecs = new int[groupSpecCount];
-		this.onlyLast = onlyLast;
+	public GroupBy(Aggregate dftAgg, Aggregate[] addAggs, int grpSpecCnt,
+			boolean sequential) {
+		this.defaultAgg = dftAgg;
+		this.addAggs = addAggs;
+		this.groupSpecs = new int[grpSpecCnt];
+		this.addAggSpecs = new int[addAggs.length];
+		this.sequential = sequential;
 	}
 
 	@Override
@@ -120,6 +128,14 @@ public class GroupBy implements Block {
 		return new Reference() {
 			public void setPos(int pos) {
 				groupSpecs[groupSpecNo] = pos;
+			}
+		};
+	}
+
+	public Reference aggregate(final int addAggNo) {
+		return new Reference() {
+			public void setPos(int pos) {
+				addAggSpecs[addAggNo] = pos;
 			}
 		};
 	}

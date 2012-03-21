@@ -28,11 +28,14 @@
 package org.brackit.xquery.compiler.profiler;
 
 import java.io.File;
+import java.util.Map;
 
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.XQuery;
+import org.brackit.xquery.atomic.QNm;
+import org.brackit.xquery.atomic.Str;
 import org.brackit.xquery.compiler.AST;
-import org.brackit.xquery.compiler.translator.PipelineCompiler;
+import org.brackit.xquery.compiler.translator.TopDownTranslator;
 import org.brackit.xquery.module.MainModule;
 import org.brackit.xquery.operator.Operator;
 import org.brackit.xquery.util.dot.DotContext;
@@ -43,7 +46,7 @@ import org.brackit.xquery.xdm.Expr;
  * @author Sebastian Baechle
  * 
  */
-public class ProfilingCompiler extends PipelineCompiler {
+public class ProfilingCompiler extends TopDownTranslator {
 
 	public static final String PLOT_TYPE = "svg";
 	
@@ -53,8 +56,8 @@ public class ProfilingCompiler extends PipelineCompiler {
 
 	private ProfileOperator pending; // "upcoming" parent operator to
 	
-	public ProfilingCompiler() {
-		super();
+	public ProfilingCompiler(Map<QNm, Str> options) {
+		super(options);
 	}
 
 	@Override
@@ -72,11 +75,11 @@ public class ProfilingCompiler extends PipelineCompiler {
 	}
 
 	@Override
-	protected Operator anyOp(AST node) throws QueryException {
+	protected Operator anyOp(Operator in, AST node) throws QueryException {
 		ProfileOperator profileOp = new ProfileOperator();
 		ProfilingNode savedParent = parent;
 		parent = profileOp;
-		Operator op = super.anyOp(node);
+		Operator op = super.anyOp(in, node);
 		profileOp.setOp(op);
 		parent = savedParent;
 		if (parent != null) {

@@ -185,7 +185,7 @@ public class ForBind implements Block {
 		final Tuple t;
 		final Sequence s;
 		Sink sink;
-		IntNumeric pos = (bindPos) ? Int32.ONE : null;
+		IntNumeric pos = (bindPos) ? Int32.ZERO : null;
 
 		public ProduceTask(Sink sink, Tuple t, Sequence s) {
 			this.sink = sink;
@@ -227,8 +227,8 @@ public class ForBind implements Block {
 				Item[] buf, int len) throws QueryException {
 			Sink ss = sink;
 			sink = sink.fork();
-			pos = (IntNumeric) ((pos != null) ? pos.add(new Int32(len)) : null);
 			EmitTask et = new EmitTask(ss, t, buf, len, pos);
+			pos = (IntNumeric) ((pos != null) ? pos.add(new Int32(len)) : null);
 			if (pool.dispatch(et)) {
 				queue.add(et);
 				if (queue.size() == qsize) {
@@ -349,7 +349,6 @@ public class ForBind implements Block {
 				b.compute();
 				a.join();
 			} else {
-				IntNumeric pos = (bindPos) ? Int32.ZERO : null;
 				for (int i = start; i < end; i++) {
 					Sequence s = expr.evaluate(ctx, buf[i]);
 					Sink ss = sink;
