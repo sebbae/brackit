@@ -46,4 +46,8 @@ public interface ItemType {
 	public boolean isNode();
 	
 	public boolean isFunction();
+	
+	public boolean isListOrUnion();
+	
+	public boolean isRecord();
 }

@@ -32,12 +32,14 @@ import java.util.Arrays;
 import org.brackit.xquery.ErrorCode;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.atomic.AnyURI;
+import org.brackit.xquery.atomic.Bool;
 import org.brackit.xquery.atomic.Dbl;
 import org.brackit.xquery.atomic.Dec;
 import org.brackit.xquery.atomic.Int32;
 import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.atomic.Str;
 import org.brackit.xquery.compiler.AST;
+import org.brackit.xquery.compiler.Bits;
 import org.brackit.xquery.compiler.XQ;
 import org.brackit.xquery.module.Functions;
 import org.brackit.xquery.util.log.Logger;
@@ -814,7 +816,50 @@ public class XQParser extends Tokenizer {
 		return body;
 	}
 
+	// Begin Custom scripting syntax
 	private AST expr() throws TokenizerException {
+		AST first = assignmentClause();
+		if (first == null) {
+			first = concatExpr();
+			if (laSkipWS(";") == null) {
+				return first;
+			}
+			AST c = new AST(XQ.LetClause);
+			AST bnd = new AST(XQ.TypedVariableBinding);
+			bnd.addChild(new AST(XQ.Variable, Bits.FS_FOO));
+			c.addChild(bnd);
+			c.addChild(first);
+			first = c;
+		} else {
+			if (laSkipWS(";") == null) {
+				return first.getChild(1);
+			}
+		}
+		QNm lastVar = (QNm) first.getChild(0).getChild(0).getValue();
+		AST sequenceExpr = new AST(XQ.FlowrExpr);
+		sequenceExpr.addChild(first);
+		while (attemptSkipWS(";")) {
+			AST c = assignmentClause();
+			if (c == null) {
+				c = new AST(XQ.LetClause);
+				AST bnd = new AST(XQ.TypedVariableBinding);
+				bnd.addChild(new AST(XQ.Variable, Bits.FS_FOO));
+				c.addChild(bnd);
+				c.addChild(concatExpr());
+				lastVar = Bits.FS_FOO;
+			} else {
+				lastVar = (QNm) c.getChild(0).getChild(0).getValue();
+			}
+			sequenceExpr.addChild(c);
+		}
+		AST returnClause = new AST(XQ.ReturnClause);
+		returnClause.addChild(new AST(XQ.VariableRef, lastVar));
+		sequenceExpr.addChild(returnClause);
+		return sequenceExpr;
+	}
+
+	// vanilla XQuery 3.0 expr()
+	private AST concatExpr() throws TokenizerException {
 		AST first = exprSingle();
 		if (!attemptSkipWS(",")) {
 			return first;
@@ -827,6 +872,8 @@ public class XQParser extends Tokenizer {
 		} while (attemptSkipWS(","));
 		return sequenceExpr;
 	}
+
+	// End Custom scripting syntax
 
 	private AST exprSingle() throws TokenizerException {
 		AST expr = flowrExpr();
@@ -1290,7 +1337,7 @@ public class XQParser extends Tokenizer {
 			groupByClause.addChild(gs);
 		} while (attemptSkipWS(","));
 		// per default all non-grouping variables
-		// in the current flwor are grouped as a sequences		
+		// in the current flwor are grouped as a sequences
 		AST dftAggregate = new AST(XQ.DftAggregateSpec);
 		dftAggregate.addChild(new AST(XQ.SequenceAgg));
 		groupByClause.addChild(dftAggregate);
@@ -1384,7 +1431,7 @@ public class XQParser extends Tokenizer {
 		if (laSkipWS("$") == null) {
 			return null;
 		}
-		AST qExpr = new AST(XQ.QuantifiedExpr);		
+		AST qExpr = new AST(XQ.QuantifiedExpr);
 		qExpr.addChild(quantifier);
 		AST qBinding = new AST(XQ.QuantifiedBinding);
 		qBinding.addChild(typedVarBinding());
@@ -2166,13 +2213,33 @@ public class XQParser extends Tokenizer {
 		return parenthesized;
 	}
 
+	// BEGIN Custom record syntax
 	private AST stepExpr() throws TokenizerException {
+		AST expr = origStepExpr();
+		if (expr == null) {
+			return null;
+		}
+		if (!attemptSkipS("=>")) {
+			return expr;
+		}
+		AST tmp = new AST(XQ.DerefExpr);
+		tmp.addChild(expr);
+		do {
+			tmp.addChild(derefStep());
+		} while (attemptSkipS("=>"));
+		return tmp;
+	}
+
+	// vanilla XQuery 3.0 step expr
+	private AST origStepExpr() throws TokenizerException {
 		AST expr = postFixExpr();
 		if (expr != null) {
 			return expr;
 		}
 		return axisStep();
 	}
+
+	// END Custom record syntax
 
 	private AST axisStep() throws TokenizerException {
 		AST[] step = forwardStep();
@@ -2669,6 +2736,26 @@ public class XQParser extends Tokenizer {
 			return null;
 		}
 		while (true) {
+			// BEGIN Custom array syntax extension
+			AST index = index();
+			if (index != null) {
+				AST arrayAccess = new AST(XQ.ArrayAccess);
+				arrayAccess.addChild(expr);
+				arrayAccess.addChild(index);
+				expr = arrayAccess;
+				continue;
+			}
+			// END Custom array syntax extension
+			// BEGIN Custom record syntax
+			AST[] projectionList = projectionList();
+			if ((projectionList != null) && (projectionList.length > 0)) {
+				AST projectionExpr = new AST(XQ.RecordProjection);
+				projectionExpr.addChild(expr);
+				projectionExpr.addChildren(projectionList);
+				expr = projectionExpr;
+				continue;
+			}
+			// END Custom record syntax
 			AST predicate = predicate();
 			if (predicate != null) {
 				AST filterExpr = new AST(XQ.FilterExpr);
@@ -2843,6 +2930,12 @@ public class XQParser extends Tokenizer {
 	private AST constructor() throws TokenizerException {
 		AST con = directConstructor(false);
 		con = (con != null) ? con : computedConstructor();
+		// BEGIN Custom array syntax
+		con = (con != null) ? con : arrayConstructor();
+		// END Custom array syntax
+		// BEGIN Custom record syntax
+		con = (con != null) ? con : recordConstructor();
+		// END Custom record syntax
 		return con;
 	}
 
@@ -2864,7 +2957,7 @@ public class XQParser extends Tokenizer {
 					|| (laSkipWS("<!") != null) || (!attemptSkipWS("<"))) {
 				return null;
 			}
-		}		
+		}
 		// name is expanded after (possible) declaration of in-scope namespaces
 		AST stag = qnameLiteral(false, false);
 		QNm name = (QNm) stag.getValue();
@@ -3534,6 +3627,159 @@ public class XQParser extends Tokenizer {
 		consume(la);
 		return (la == null) ? null : new AST(XQ.PragmaContent, la.string());
 	}
+
+	// BEGIN Custom array syntax
+	private AST index() throws TokenizerException {
+		if (!attemptSkipWS("[[")) {
+			return null;
+		}
+		AST index = exprSingle();
+		consumeSkipWS("]]");
+		return index;
+	}
+
+	private AST arrayConstructor() throws TokenizerException {
+		if (!attemptSkipWS("[")) {
+			return null;
+		}
+		AST array = new AST(XQ.ArrayConstructor);
+		do {
+			AST f = new AST((attemptSkipS("=")) ? XQ.FlattenedField
+					: XQ.SequenceField);
+			// for JSON-like semantics
+			// the tokens 'true' and 'false' are
+			// matched as boolean constants and
+			// not as path expressions, the token 'null'
+			// is interpreted as empty sequence
+			if (attemptSymSkipWS("true")) {
+				f.addChild(new AST(XQ.Bool, Bool.TRUE));
+			} else if (attemptSymSkipWS("false")) {
+				f.addChild(new AST(XQ.Bool, Bool.FALSE));
+			} else if (attemptSymSkipWS("null")) {
+				f.addChild(new AST(XQ.SequenceExpr));
+			} else {
+				f.addChild(exprSingle());
+			}
+			array.addChild(f);
+		} while (attemptSkipWS(","));
+		consumeSkipWS("]");
+		return array;
+	}
+
+	// END Custom array syntax
+
+	// BEGIN Custom record syntax
+	private AST derefStep() throws TokenizerException {
+		Token la = laStringSkipWS(true);
+		EQNameToken la2;
+		if (la != null) {
+			consume(la);
+			return new AST(XQ.QNm, new QNm(null, null, la.string()));
+		} else if ((la2 = laEQNameSkipWS(true)) != null) {
+			consume(la2);
+			return new AST(XQ.QNm, la2.qname());
+		} else {
+			return origStepExpr();
+		}
+	}
+
+	private AST recordConstructor() throws TokenizerException {
+		if (!attemptSkipWS("{")) {
+			return null;
+		}
+		AST record = new AST(XQ.RecordConstructor);
+		do {
+			AST f;
+			Token la;
+			if (((la = laStringSkipWS(true)) != null)
+					|| ((la = laNCNameSkipWS()) != null)) {
+				consume(la);
+				f = new AST(XQ.KeyValueField);
+				f.addChild(new AST(XQ.QNm, new QNm(null, null, la.string())));
+				f.addChild(recordValue());
+			} else {
+				f = new AST(XQ.RecordField);
+				f.addChild(exprSingle());
+			}
+			record.addChild(f);
+		} while (attemptSkipWS(","));
+		consumeSkipWS("}");
+		return record;
+	}
+
+	private AST recordValue() throws TokenizerException {
+		consumeSkipWS(":");
+		// for JSON-like semantics
+		// the tokens 'true' and 'false' are
+		// matched as boolean constants and
+		// not as path expressions, the token 'null'
+		// is interpreted as empty sequence
+		if (attemptSymSkipWS("true")) {
+			return new AST(XQ.Bool, Bool.TRUE);
+		} else if (attemptSymSkipWS("false")) {
+			return new AST(XQ.Bool, Bool.FALSE);
+		} else if (attemptSymSkipWS("null")) {
+			return new AST(XQ.SequenceExpr);
+		} else {
+			return exprSingle();
+		}
+	}
+
+	private AST[] projectionList() throws TokenizerException {
+		if (!attemptSkipWS("{")) {
+			return null;
+		}
+		AST[] args = new AST[0];
+		do {
+			Token la = laStringSkipWS(true);
+			EQNameToken la2;
+			if (la != null) {
+				consume(la);
+				args = add(args,
+						new AST(XQ.QNm, new QNm(null, null, la.string())));
+			} else if ((la2 = laEQNameSkipWS(true)) != null) {
+				consume(la2);
+				args = add(args, new AST(XQ.QNm, la2.qname()));
+			} else {
+				args = add(args, exprSingle());
+			}
+		} while (attemptSkipWS(","));
+		consumeSkipWS("}");
+		return args;
+	}
+
+	// END Custom record syntax
+
+	// Begin Custom scripting syntax
+	private AST assignmentClause() throws TokenizerException {
+		Token la = laSkipWS("$");
+		if (la == null) {
+			return null;
+		}
+		EQNameToken la2 = laEQName(la, true);
+		if (la2 == null) {
+			return null;
+		}
+		if ((laSymSkipWS(la2, "as") == null) && (laSkipWS(la2, ":=") == null)) {
+			return null;
+		}
+		consume(la);
+		consume(la2);
+
+		AST ass = new AST(XQ.LetClause);
+		AST binding = new AST(XQ.TypedVariableBinding);
+		binding.addChild(new AST(XQ.Variable, la2.qname()));
+		AST typeDecl = typeDeclaration();
+		if (typeDecl != null) {
+			binding.addChild(typeDecl);
+		}
+		ass.addChild(binding);
+		consumeSkipWS(":=");
+		ass.addChild(concatExpr());
+		return ass;
+	}
+
+	// End Custom scripting syntax
 
 	private AST[] add(AST[] asts, AST ast) {
 		int len = asts.length;

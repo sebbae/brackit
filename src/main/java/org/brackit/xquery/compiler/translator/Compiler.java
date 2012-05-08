@@ -39,16 +39,19 @@ import org.brackit.xquery.atomic.Bool;
 import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.atomic.Str;
 import org.brackit.xquery.compiler.AST;
-import org.brackit.xquery.compiler.CompileChain;
+import org.brackit.xquery.compiler.Bits;
 import org.brackit.xquery.compiler.XQ;
 import org.brackit.xquery.expr.Accessor;
 import org.brackit.xquery.expr.AndExpr;
 import org.brackit.xquery.expr.ArithmeticExpr;
 import org.brackit.xquery.expr.ArithmeticExpr.ArithmeticOp;
+import org.brackit.xquery.expr.ArrayAccessExpr;
+import org.brackit.xquery.expr.ArrayExpr;
 import org.brackit.xquery.expr.AttributeExpr;
 import org.brackit.xquery.expr.Cast;
 import org.brackit.xquery.expr.Castable;
 import org.brackit.xquery.expr.CommentExpr;
+import org.brackit.xquery.expr.DerefExpr;
 import org.brackit.xquery.expr.DocumentExpr;
 import org.brackit.xquery.expr.ElementExpr;
 import org.brackit.xquery.expr.EmptyExpr;
@@ -64,7 +67,12 @@ import org.brackit.xquery.expr.OrExpr;
 import org.brackit.xquery.expr.PIExpr;
 import org.brackit.xquery.expr.PathStepExpr;
 import org.brackit.xquery.expr.PipeExpr;
+import org.brackit.xquery.expr.ProjectionExpr;
 import org.brackit.xquery.expr.RangeExpr;
+import org.brackit.xquery.expr.RecordExpr;
+import org.brackit.xquery.expr.RecordExpr.Field;
+import org.brackit.xquery.expr.RecordExpr.KeyValueField;
+import org.brackit.xquery.expr.RecordExpr.RecordField;
 import org.brackit.xquery.expr.SequenceExpr;
 import org.brackit.xquery.expr.StepExpr;
 import org.brackit.xquery.expr.SwitchExpr;
@@ -76,8 +84,8 @@ import org.brackit.xquery.expr.UnionExpr;
 import org.brackit.xquery.expr.VCmpExpr;
 import org.brackit.xquery.function.FunctionExpr;
 import org.brackit.xquery.function.UDF;
+import org.brackit.xquery.function.bit.BitFun;
 import org.brackit.xquery.module.Module;
-import org.brackit.xquery.module.Namespaces;
 import org.brackit.xquery.module.StaticContext;
 import org.brackit.xquery.operator.Count;
 import org.brackit.xquery.operator.ForBind;
@@ -143,7 +151,7 @@ public class Compiler implements Translator {
 			}
 		}
 	}
-	
+
 	protected static class AggregateBinding {
 		final QNm srcVar;
 		final QNm aggVar;
@@ -282,7 +290,7 @@ public class Compiler implements Translator {
 		case XQ.StepExpr:
 			return stepExpr(node);
 		case XQ.ContextItemExpr:
-			return table.resolve(Namespaces.FS_DOT);
+			return table.resolve(Bits.FS_DOT);
 		case XQ.InsertExpr:
 			return insertExpr(node);
 		case XQ.DeleteExpr:
@@ -312,6 +320,20 @@ public class Compiler implements Translator {
 			throw new QueryException(
 					ErrorCode.ERR_SCHEMA_VALIDATION_FEATURE_NOT_SUPPORTED,
 					"Schema validation feature is not supported.");
+			// BEGIN Custom array syntax extension
+		case XQ.ArrayConstructor:
+			return arrayExpr(node);
+		case XQ.ArrayAccess:
+			return arrayAccessExpr(node);
+			// END Custom array syntax extension
+			// BEGIN Custom record syntax extension
+		case XQ.RecordConstructor:
+			return recordExpr(node);
+		case XQ.DerefExpr:
+			return derefExpr(node);
+		case XQ.RecordProjection:
+			return projectionExpr(node);
+			// END Custom array syntax extension
 		default:
 			throw new QueryException(ErrorCode.BIT_DYN_RT_ILLEGAL_STATE_ERROR,
 					"Unexpected AST expr node '%s' of type: %s", node,
@@ -543,12 +565,11 @@ public class Compiler implements Translator {
 		boolean[] bindSize = new boolean[noOfPredicates];
 
 		for (int i = 0; i < noOfPredicates; i++) {
-			Binding itemBinding = table.bind(Namespaces.FS_DOT,
-					SequenceType.ITEM);
-			Binding posBinding = table.bind(Namespaces.FS_POSITION,
+			Binding itemBinding = table.bind(Bits.FS_DOT, SequenceType.ITEM);
+			Binding posBinding = table.bind(Bits.FS_POSITION,
 					SequenceType.INTEGER);
-			Binding sizeBinding = table.bind(Namespaces.FS_LAST,
-					SequenceType.INTEGER);
+			Binding sizeBinding = table
+					.bind(Bits.FS_LAST, SequenceType.INTEGER);
 			predicates[i] = expr(node.getChild(1 + i).getChild(0), true);
 			table.unbind();
 			table.unbind();
@@ -657,9 +678,9 @@ public class Compiler implements Translator {
 		Function function;
 
 		if (someQuantified) {
-			function = CompileChain.BIT_SOME_FUNC;
+			function = BitFun.SOME_FUNC;
 		} else {
-			function = CompileChain.BIT_EVERY_FUNC;
+			function = BitFun.EVERY_FUNC;
 		}
 
 		return new IfExpr(new FunctionExpr(node.getStaticContext(), function,
@@ -710,7 +731,7 @@ public class Compiler implements Translator {
 				args[i] = expr(arg, true);
 			}
 		} else if (function.getSignature().defaultCtxItemType() != null) {
-			Expr contextItemRef = table.resolve(Namespaces.FS_DOT);
+			Expr contextItemRef = table.resolve(Bits.FS_DOT);
 			args = new Expr[] { contextItemRef };
 		} else {
 			args = new Expr[0];
@@ -721,7 +742,7 @@ public class Compiler implements Translator {
 
 	protected Expr documentExpr(AST node) throws QueryException {
 		boolean bind = false;
-		Binding binding = table.bind(Namespaces.FS_PARENT, SequenceType.ITEM);
+		Binding binding = table.bind(Bits.FS_PARENT, SequenceType.ITEM);
 		Expr contentExpr = expr(node.getChild(0), false);
 		table.unbind();
 		bind = binding.isReferenced();
@@ -752,8 +773,7 @@ public class Compiler implements Translator {
 		Expr[] contentExpr;
 
 		if (node.getChildCount() > 0) {
-			Binding binding = table.bind(Namespaces.FS_PARENT,
-					SequenceType.ITEM);
+			Binding binding = table.bind(Bits.FS_PARENT, SequenceType.ITEM);
 			contentExpr = contentSequence(node.getChild(pos++));
 			table.unbind();
 			bind = binding.isReferenced();
@@ -836,7 +856,7 @@ public class Compiler implements Translator {
 				|| (parent.getType() == XQ.CompDocumentConstructor);
 
 		if (parentIsConstructor) {
-			table.resolve(Namespaces.FS_PARENT);
+			table.resolve(Bits.FS_PARENT);
 		}
 
 		return parentIsConstructor;
@@ -978,12 +998,11 @@ public class Compiler implements Translator {
 	protected Expr pathExpr(AST node) throws QueryException {
 		Expr e1 = expr(node.getChild(0), true);
 		for (int i = 1; i < node.getChildCount(); i++) {
-			Binding itemBinding = table.bind(Namespaces.FS_DOT,
-					SequenceType.NODE);
-			Binding posBinding = table.bind(Namespaces.FS_POSITION,
+			Binding itemBinding = table.bind(Bits.FS_DOT, SequenceType.NODE);
+			Binding posBinding = table.bind(Bits.FS_POSITION,
 					SequenceType.INTEGER);
-			Binding sizeBinding = table.bind(Namespaces.FS_LAST,
-					SequenceType.INTEGER);
+			Binding sizeBinding = table
+					.bind(Bits.FS_LAST, SequenceType.INTEGER);
 			AST step = node.getChild(i);
 			Expr e2 = expr(step, true);
 
@@ -1014,7 +1033,7 @@ public class Compiler implements Translator {
 			axis = Accessor.CHILD;
 		}
 
-		Expr in = table.resolve(Namespaces.FS_DOT);
+		Expr in = table.resolve(Bits.FS_DOT);
 		NodeType test = nodeTest(child, axis.getAxis());
 
 		int noOfPredicates = Math.max(node.getChildCount() - 2, 0);
@@ -1024,12 +1043,11 @@ public class Compiler implements Translator {
 		boolean[] bindSize = new boolean[noOfPredicates];
 
 		for (int i = 0; i < noOfPredicates; i++) {
-			Binding itemBinding = table.bind(Namespaces.FS_DOT,
-					SequenceType.ITEM);
-			Binding posBinding = table.bind(Namespaces.FS_POSITION,
+			Binding itemBinding = table.bind(Bits.FS_DOT, SequenceType.ITEM);
+			Binding posBinding = table.bind(Bits.FS_POSITION,
 					SequenceType.INTEGER);
-			Binding sizeBinding = table.bind(Namespaces.FS_LAST,
-					SequenceType.INTEGER);
+			Binding sizeBinding = table
+					.bind(Bits.FS_LAST, SequenceType.INTEGER);
 			filter[i] = expr(node.getChild(2 + i).getChild(0), true);
 			table.unbind();
 			table.unbind();
@@ -1383,7 +1401,7 @@ public class Compiler implements Translator {
 				SequenceType aggType = SequenceType.ITEM_SEQUENCE;
 				if (typedVarBnd.getChildCount() == 2) {
 					aggType = sequenceType(typedVarBnd.getChild(1));
-				}				
+				}
 				bnds.add(new AggregateBinding(var, aggVar, aggType, agg));
 			}
 			pos++;
@@ -1395,7 +1413,8 @@ public class Compiler implements Translator {
 			addAggs[i] = bnd.agg;
 		}
 		boolean sequential = node.checkProperty("sequential");
-		GroupBy groupBy = new GroupBy(in.operator, dftAgg, addAggs, grpSpecCnt, sequential);
+		GroupBy groupBy = new GroupBy(in.operator, dftAgg, addAggs, grpSpecCnt,
+				sequential);
 		// resolve positions grouping variables
 		for (int i = 0; i < grpSpecCnt; i++) {
 			QNm grpVarName = (QNm) node.getChild(i).getChild(0).getValue();
@@ -1506,4 +1525,61 @@ public class Compiler implements Translator {
 			}
 		};
 	}
+
+	// BEGIN Custom array syntax extension
+	protected Expr arrayAccessExpr(AST node) throws QueryException {
+		Expr expr = expr(node.getChild(0), true);
+		Expr index = expr(node.getChild(1), true);
+		return new ArrayAccessExpr(expr, index);
+	}
+
+	protected Expr arrayExpr(AST node) throws QueryException {
+		int cnt = node.getChildCount();
+		boolean[] flatten = new boolean[cnt];
+		Expr[] expr = new Expr[cnt];
+		for (int i = 0; i < cnt; i++) {
+			AST field = node.getChild(i);
+			flatten[i] = (field.getType() == XQ.FlattenedField);
+			expr[i] = expr(field.getChild(0), true);
+		}
+		return new ArrayExpr(expr, flatten);
+	}
+
+	// END Custom array syntax extension
+
+	// BEGIN Custom record syntax extension
+	protected Expr recordExpr(AST node) throws QueryException {
+		int cnt = node.getChildCount();
+		Field[] fields = new Field[cnt];
+		for (int i = 0; i < cnt; i++) {
+			AST field = node.getChild(i);
+			if (field.getType() == XQ.KeyValueField) {
+				QNm name = (QNm) field.getChild(0).getValue();
+				fields[i] = new KeyValueField(name, expr(field.getChild(1),
+						true));
+			} else {
+				fields[i] = new RecordField(expr(field.getChild(0), true));
+			}
+		}
+		return new RecordExpr(fields);
+	}
+
+	protected Expr derefExpr(AST node) throws QueryException {
+		Expr record = expr(node.getChild(0), true);
+		Expr[] fields = new Expr[node.getChildCount() - 1];
+		for (int i = 1; i < node.getChildCount(); i++) {
+			fields[i - 1] = expr(node.getChild(i), true);
+		}
+		return new DerefExpr(record, fields);
+	}
+
+	protected Expr projectionExpr(AST node) throws QueryException {
+		Expr record = expr(node.getChild(0), true);
+		Expr[] fields = new Expr[node.getChildCount() - 1];
+		for (int i = 1; i < node.getChildCount(); i++) {
+			fields[i - 1] = expr(node.getChild(i), true);
+		}
+		return new ProjectionExpr(record, fields);
+	}
+	// END Custom record syntax extension
 }

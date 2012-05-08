@@ -48,7 +48,7 @@ public class Grouping {
 	final Aggregate defaultAgg;
 	final Aggregate[] additionalAggs;
 	
-	int tupleSize = -1;
+	volatile int tupleSize = -1;
 	Aggregate[] aggSpecs;
 	Atomic[] gk; // current grouping key
 	Aggregator[] aggs;
@@ -71,7 +71,10 @@ public class Grouping {
 		init(tupleSize);
 	}
 
-	private void init(int tupleSize) {
+	private synchronized void init(int tupleSize) {
+		if (this.tupleSize != -1) {
+			return;
+		}
 		this.tupleSize = tupleSize;
 		int len = tupleSize + additionalAggs.length;
 		this.aggSpecs = new Aggregate[len];
@@ -125,7 +128,7 @@ public class Grouping {
 		return true;
 	}
 
-	public void clear() {
+	public synchronized void clear() {
 		for (int i = 0; i < aggSpecs.length; i++) {
 			aggs[i] = aggSpecs[i].aggregator();
 		}
@@ -162,8 +165,10 @@ public class Grouping {
 			Sequence s = t.get(i);
 			if (s == null) {
 				continue;
+			}		
+			synchronized (aggs[i]) {
+				aggs[i].add(s);	
 			}
-			aggs[i].add(s);
 		}
 		for (int i = 0; i < addAggsSpecs.length; i++) {
 			Sequence s = t.get(addAggsSpecs[i]);
@@ -175,7 +180,7 @@ public class Grouping {
 		size++;
 	}
 
-	public Tuple emit() throws QueryException {
+	public synchronized Tuple emit() throws QueryException {
 		Sequence[] groupings = new Sequence[aggs.length];
 		for (int i = 0; i < aggs.length; i++) {
 			groupings[i] = aggs[i].getAggregate();

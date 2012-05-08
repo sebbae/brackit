@@ -32,8 +32,8 @@ import org.brackit.xquery.QueryException;
 import org.brackit.xquery.atomic.Int32;
 import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.block.FJControl;
+import org.brackit.xquery.compiler.Bits;
 import org.brackit.xquery.function.AbstractFunction;
-import org.brackit.xquery.module.Namespaces;
 import org.brackit.xquery.module.StaticContext;
 import org.brackit.xquery.xdm.Sequence;
 import org.brackit.xquery.xdm.Signature;
@@ -48,8 +48,8 @@ import org.brackit.xquery.xdm.type.SequenceType;
  */
 public class GetSerializerPermits extends AbstractFunction {
 
-	public static final QNm GET_SERIALIZER_PERMITS = new QNm(Namespaces.BIT_NSURI,
-			Namespaces.BIT_PREFIX, "get-serializer-permits");
+	public static final QNm GET_SERIALIZER_PERMITS = new QNm(Bits.BIT_NSURI,
+			Bits.BIT_PREFIX, "get-serializer-permits");
 
 	public GetSerializerPermits() {
 		super(GET_SERIALIZER_PERMITS, new Signature(new SequenceType(AtomicType.INT,

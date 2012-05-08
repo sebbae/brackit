@@ -25,34 +25,65 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.brackit.xquery.function.bit;
+package org.brackit.xquery.xdm.type;
 
-import org.brackit.xquery.atomic.QNm;
-import org.brackit.xquery.module.Namespaces;
+import org.brackit.xquery.QueryException;
+import org.brackit.xquery.xdm.Item;
+import org.brackit.xquery.xdm.ListOrUnion;
 
 /**
  * @author Sebastian Baechle
  * 
  */
-public class BitError {
+public final class ListOrUnionType implements ItemType {
 
-	/**
-	 * Errors for the predefined bit functions
-	 */
-	public static final QNm BIT_ADDTOCOLLECTION_INT_ERROR = new QNm(
-			Namespaces.ERR_NSURI, Namespaces.ERR_PREFIX, "BIT0001");
-	public static final QNm BIT_CREATECOLLECTION_INT_ERROR = new QNm(
-			Namespaces.ERR_NSURI, Namespaces.ERR_PREFIX, "BIT0002");
-	public static final QNm BIT_DROPCOLLECTION_INT_ERROR = new QNm(
-			Namespaces.ERR_NSURI, Namespaces.ERR_PREFIX, "BIT0003");
-	public static final QNm BIT_EVAL_INT_ERROR = new QNm(Namespaces.BIT_NSURI,
-			Namespaces.BIT_PREFIX, "BIT0004");
-	public static final QNm BIT_EXISTCOLLECTION_INT_ERROR = new QNm(
-			Namespaces.ERR_NSURI, Namespaces.ERR_PREFIX, "BIT0005");
-	public static final QNm BIT_LOADFILE_INT_ERROR = new QNm(
-			Namespaces.ERR_NSURI, Namespaces.ERR_PREFIX, "BIT0006");
-	public static final QNm BIT_MAKEDIRECTORY_INT_ERROR = new QNm(
-			Namespaces.ERR_NSURI, Namespaces.ERR_PREFIX, "BIT0007");
-	public static final QNm BIT_STOREDOC_INT_ERROR = new QNm(
-			Namespaces.ERR_NSURI, Namespaces.ERR_PREFIX, "BIT0008");
+	public static final ListOrUnionType LIST_OR_UNION = new ListOrUnionType();
+
+	public ListOrUnionType() {
+	}
+
+	@Override
+	public boolean isAnyItem() {
+		return false;
+	}
+
+	@Override
+	public boolean isAtomic() {
+		return false;
+	}
+
+	@Override
+	public boolean isNode() {
+		return false;
+	}
+
+	@Override
+	public boolean isFunction() {
+		return true;
+	}
+
+	@Override
+	public boolean isListOrUnion() {
+		return true;
+	}
+
+	@Override
+	public boolean isRecord() {
+		return false;
+	}
+
+	@Override
+	public boolean matches(Item item) throws QueryException {
+		// TODO subtyping??? At the moment we have Object[]-like semantics
+		return (item instanceof ListOrUnion);
+	}
+
+	public boolean equals(Object obj) {
+		// TODO subtyping??? At the moment we have Object[]-like semantics
+		return (obj instanceof ListOrUnionType);
+	}
+
+	public String toString() {
+		return "listOrUnion()";
+	}
 }

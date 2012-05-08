@@ -35,6 +35,7 @@ import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.atomic.Str;
 import org.brackit.xquery.compiler.AST;
 import org.brackit.xquery.compiler.CompileChain;
+import org.brackit.xquery.compiler.optimizer.walker.topdown.GroupByAggregates;
 import org.brackit.xquery.compiler.optimizer.walker.topdown.JoinGroupDemarcation;
 import org.brackit.xquery.compiler.optimizer.walker.topdown.JoinRewriter;
 import org.brackit.xquery.compiler.optimizer.walker.topdown.LeftJoinLifting;
@@ -102,11 +103,12 @@ public class TopDownOptimizer extends DefaultOptimizer {
 
 	private class FinalizePipeline implements Stage {
 		public AST rewrite(StaticContext sctx, AST ast) throws QueryException {
-			boolean push = enabled(CompileChain.PUSH_EVAL_OPTION);
+			boolean push = enabled(CompileChain.PUSH_EVAL_OPTION);						
 			ast = new PredicateMerge().walk(ast);
 			if (!push) {
 				ast = new TrivialLeftJoinRemoval().walk(ast);
 			}
+			ast = new GroupByAggregates().walk(ast);
 			ast = new JoinGroupDemarcation().walk(ast);
 			if (!push) {
 				ast = new PullEvaluation().walk(ast);
