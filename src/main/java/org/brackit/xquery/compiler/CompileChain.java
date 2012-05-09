@@ -44,6 +44,7 @@ import org.brackit.xquery.compiler.translator.TopDownTranslator;
 import org.brackit.xquery.compiler.translator.Translator;
 import org.brackit.xquery.function.bit.BitFun;
 import org.brackit.xquery.function.bit.Create;
+import org.brackit.xquery.function.bit.Delay;
 import org.brackit.xquery.function.bit.Drop;
 import org.brackit.xquery.function.bit.Eval;
 import org.brackit.xquery.function.bit.Exists;
@@ -54,6 +55,7 @@ import org.brackit.xquery.function.bit.Mkdir;
 import org.brackit.xquery.function.bit.Parse;
 import org.brackit.xquery.function.bit.Serialize;
 import org.brackit.xquery.function.bit.Silent;
+import org.brackit.xquery.function.bit.Sleep;
 import org.brackit.xquery.function.bit.Store;
 import org.brackit.xquery.function.bit.Values;
 import org.brackit.xquery.function.io.Ls;
@@ -90,6 +92,8 @@ public class CompileChain {
 		Functions.predefine(BitFun.EVERY_FUNC);
 		// Utility
 		Functions.predefine(new Silent());
+		Functions.predefine(new Delay());
+		Functions.predefine(new Sleep());
 		Functions.predefine(new Parse());
 		Functions.predefine(new Eval());
 		Functions.predefine(new Serialize());
