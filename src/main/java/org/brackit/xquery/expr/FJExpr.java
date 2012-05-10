@@ -27,6 +27,7 @@
  */
 package org.brackit.xquery.expr;
 
+import org.brackit.xquery.ErrorCode;
 import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
@@ -53,7 +54,7 @@ public class FJExpr implements Expr {
 		Eval task = new Eval(ctx, t);
 		FJControl.POOL.submit(task);
 		task.join();
-		return task.result;
+		return task.getResult();
 	}
 
 	@Override
@@ -61,7 +62,7 @@ public class FJExpr implements Expr {
 		ItemEval task = new ItemEval(ctx, t);
 		FJControl.POOL.submit(task);
 		task.join();
-		return task.result;
+		return task.getResult();
 	}
 
 	@Override
@@ -88,6 +89,17 @@ public class FJExpr implements Expr {
 		public void compute() throws Throwable {
 			result = expr.evaluate(ctx, tuple);
 		}
+		
+		public Sequence getResult() throws QueryException {
+			Throwable e = getError();
+			if (e == null) {
+				return result;
+			}
+			if (e instanceof QueryException) {
+				throw (QueryException) e;
+			}
+			throw new QueryException(e, ErrorCode.BIT_DYN_INT_ERROR);
+		}
 	}
 
 	private final class ItemEval extends Task {
@@ -103,6 +115,17 @@ public class FJExpr implements Expr {
 		@Override
 		public void compute() throws Throwable {
 			result = expr.evaluateToItem(ctx, tuple);
+		}
+		
+		public Item getResult() throws QueryException {
+			Throwable e = getError();
+			if (e == null) {
+				return result;
+			}
+			if (e instanceof QueryException) {
+				throw (QueryException) e;
+			}
+			throw new QueryException(e, ErrorCode.BIT_DYN_INT_ERROR);
 		}
 	}
 }

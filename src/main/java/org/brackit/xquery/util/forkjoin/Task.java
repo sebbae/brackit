@@ -106,11 +106,11 @@ public abstract class Task {
 		return (s > 0);
 	}
 
-	public void waitForFinish() {
-		externalWaitForFinish();
+	public Throwable getError() {
+		return throwable;
 	}
 
-	void externalWaitForFinish() {
+	private void externalWaitForFinish() {
 		int s = status;
 		if (s <= 0) {
 			synchronized (this) {
