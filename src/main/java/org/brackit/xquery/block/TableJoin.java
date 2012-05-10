@@ -152,10 +152,12 @@ public class TableJoin implements Block {
 			while (end < len) {
 				int start = end;
 				end = probeSize(buf, len, end);
-				if (start == end) {
+				if (start >= end) {
 					if (hasToken) {
 						// load table with first tuple in probe window
-						load(buf[start]);
+						Tuple t = buf[start];
+						load(t);
+						end = start;
 						continue;
 					} else {
 						Tuple[] remaining = Arrays.copyOfRange(buf, start, len);
