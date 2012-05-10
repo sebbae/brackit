@@ -41,6 +41,8 @@ import org.brackit.xquery.atomic.Str;
 import org.brackit.xquery.compiler.translator.Reference;
 import org.brackit.xquery.expr.RangeExpr;
 import org.brackit.xquery.expr.SequenceExpr;
+import org.brackit.xquery.function.FunctionExpr;
+import org.brackit.xquery.function.bit.Delay;
 import org.brackit.xquery.util.aggregator.Aggregate;
 import org.brackit.xquery.util.aggregator.Grouping;
 import org.brackit.xquery.xdm.Sequence;
@@ -297,16 +299,18 @@ public class GroupBy extends Check implements Operator {
 	
 	public static void main(String[] args) throws Exception {
 		Start s = new Start();
-		ForBind forBind = new ForBind(s, new RangeExpr(new Int32(1), new Int32(
-				10)), false);
-		ForBind forBind2 = new ForBind(forBind, new SequenceExpr(new Str("a"),
+		ForBind forBind2 = new ForBind(s, new SequenceExpr(new Str("a"),
 				new Str("b"), new Str("c")), false);
-		forBind.bindVariable(true);
-		GroupBy groupBy = new GroupBy(forBind2, Aggregate.SEQUENCE,
-				new Aggregate[] { Aggregate.AVG, Aggregate.SUM }, 1, true);
-		groupBy.group(0).setPos(1);
+		ForBind forBind = new ForBind(forBind2, new RangeExpr(new Int32(1), new Int32(
+				10000000)), false);
+		forBind2.bindVariable(true);
+		LetBind delay = new LetBind(forBind, new FunctionExpr(null, new Delay()));
+		GroupBy groupBy = new GroupBy(delay, Aggregate.SINGLE,
+				new Aggregate[] { Aggregate.COUNT }, 1, false);
+		groupBy.group(0).setPos(0);
 		Print p = new Print(groupBy, System.out);
 		QueryContext ctx = new QueryContext();
+		long start = System.currentTimeMillis();
 		Cursor c = p.create(ctx, TupleImpl.EMPTY_TUPLE);
 		c.open(ctx);
 		try {
@@ -315,5 +319,7 @@ public class GroupBy extends Check implements Operator {
 		} finally {
 			c.close(ctx);
 		}
+		long end = System.currentTimeMillis();
+		System.out.println(end - start + " ms");
 	}
 }

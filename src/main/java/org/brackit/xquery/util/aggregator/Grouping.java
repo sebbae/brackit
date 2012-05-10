@@ -75,7 +75,6 @@ public class Grouping {
 		if (this.tupleSize != -1) {
 			return;
 		}
-		this.tupleSize = tupleSize;
 		int len = tupleSize + additionalAggs.length;
 		this.aggSpecs = new Aggregate[len];
 		this.aggs = new Aggregator[len];
@@ -92,6 +91,7 @@ public class Grouping {
 			aggSpecs[pos] = additionalAggs[pos - tupleSize];
 		}
 		clear();
+		this.tupleSize = tupleSize;
 	}
 
 	public int getSize() {
@@ -152,10 +152,11 @@ public class Grouping {
 		if (tupleSize == -1) {
 			init(t.getSize());
 		}
-		Atomic[] pgk = gk;
+		Atomic[] pgk = this.gk;
 		if ((pgk != null) && (!cmp(pgk, gk))) {
 			return false;
 		}
+		this.gk = gk;
 		addInternal(t);
 		return true;
 	}
@@ -175,7 +176,9 @@ public class Grouping {
 			if (s == null) {
 				continue;
 			}
-			aggs[tupleSize + i].add(s);
+			synchronized (aggs[tupleSize + i]) {
+				aggs[tupleSize + i].add(s);
+			}
 		}
 		size++;
 	}
