@@ -30,6 +30,7 @@ package org.brackit.xquery.sequence;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.atomic.Counter;
 import org.brackit.xquery.atomic.IntNumeric;
+import org.brackit.xquery.xdm.Item;
 import org.brackit.xquery.xdm.Iter;
 
 /**
@@ -45,5 +46,15 @@ public abstract class BaseIter implements Iter {
 			while ((next() != null) && (skipped.inc().cmp(i) < 0))
 				;
 		}
+	}
+
+	public Split split(int min, int max) throws QueryException {
+		final Item[] buf = new Item[max];
+		int i = 0;
+		while (((buf[i++] = next()) != null) && (i < max))
+			;
+		Iter head = new ItemIter(buf, 0, i);
+		Iter tail = (i < min) ? null : this;
+		return new Split(head, tail, true);
 	}
 }

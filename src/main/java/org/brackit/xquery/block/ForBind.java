@@ -28,19 +28,17 @@
 package org.brackit.xquery.block;
 
 import java.util.ArrayDeque;
-import java.util.Queue;
 
-import org.brackit.xquery.ErrorCode;
 import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
 import org.brackit.xquery.atomic.Int32;
 import org.brackit.xquery.atomic.IntNumeric;
-import org.brackit.xquery.util.forkjoin.Pool;
 import org.brackit.xquery.util.forkjoin.Task;
 import org.brackit.xquery.xdm.Expr;
 import org.brackit.xquery.xdm.Item;
 import org.brackit.xquery.xdm.Iter;
+import org.brackit.xquery.xdm.Iter.Split;
 import org.brackit.xquery.xdm.Sequence;
 
 /**
@@ -78,233 +76,77 @@ public class ForBind implements Block {
 		this.bindPos = bindPos;
 	}
 
-	private static class Buf {
-		Tuple[] b;
-		int len;
-
-		Buf(int size) {
-			this.b = new Tuple[size];
-		}
-
-		boolean add(Tuple t) {
-			b[len++] = t;
-			return len < b.length;
-		}
-	}
-
-	private class Slice extends Task {
-		final Sink s;
+	private class ForBindTask extends Task {
 		final Tuple t;
-		final Iter it;
-		IntNumeric pos;
-		volatile Slice fork;
-
-		private Slice(Sink s, Tuple t, Iter it, IntNumeric pos) {
-			this.s = s;
-			this.t = t;
-			this.it = it;
-			this.pos = pos;
-		}
-
-		public void compute() throws QueryException {
-			fork = bind(it);
-			while ((fork != null) && (fork.finished())) {
-				fork = fork.fork;
-			}
-		}
-
-		private Slice bind(Iter c) throws QueryException {
-			Buf buf = new Buf(bufSize());
-			Slice fork = fillBuffer(c, buf);
-			if (buf.len == 0) {
-				s.begin();
-				s.end();
-				return null;
-			}
-			// process local share
-			output(buf);
-			return fork;
-		}
-
-		private void output(Buf buf) throws QueryException {
-			s.begin();
-			try {
-				for (int i = 0; i < buf.len; i++) {
-					buf.b[i] = emit(t, (Sequence) buf.b[i]);
-				}
-				s.output(buf.b, buf.len);
-			} catch (QueryException e) {
-				s.fail();
-				throw e;
-			}
-			s.end();
-		}
-
-		private Tuple emit(Tuple t, Sequence item) throws QueryException {
-			if (bindVar) {
-				if (bindPos) {
-					return t.concat(new Sequence[] { item,
-							(item != null) ? (pos = pos.inc()) : pos });
-				} else {
-					return t.concat(item);
-				}
-			} else if (bindPos) {
-				return t.concat((item != null) ? (pos = pos.inc()) : pos);
-			} else {
-				return t;
-			}
-		}
-
-		private Slice fillBuffer(Iter it, Buf buf) throws QueryException {
-			while (true) {
-				Item i = it.next();
-				if (i != null) {
-					if (!buf.add(i)) {
-						IntNumeric npos = (IntNumeric) ((pos != null) ? pos
-								.add(new Int32(buf.len)) : null);
-						Slice fork = new Slice(s.fork(), t, it, npos);
-						fork.fork();
-						it = null;
-						return fork;
-					}
-				} else {
-					it.close();
-					it = null; // allow garbage collection
-					return null;
-				}
-			}
-		}
-
-		private int bufSize() {
-			// TODO
-			return 20;
-		}
-	}
-
-	private class ProduceTask extends Task {
-		final Tuple t;
-		final Sequence s;
+		Iter it;
 		Sink sink;
 		IntNumeric pos = (bindPos) ? Int32.ZERO : null;
 
-		public ProduceTask(Sink sink, Tuple t, Sequence s) {
+		public ForBindTask(Sink sink, Tuple t, Iter it) {
 			this.sink = sink;
 			this.t = t;
-			this.s = s;
+			this.it = it;
 		}
 
 		@Override
 		public void compute() throws QueryException {
-			Pool pool = FJControl.POOL;
-			int qsize = pool.getSize();
-			Queue<EmitTask> queue = new ArrayDeque<EmitTask>(qsize * 3);
-			Iter it = s.iterate();
+			Split split = it.split(100, 100);
+			if (split.tail == null) {
+				process(split.head);
+			} else if (!split.serial) {
+				ForBindTask task1 = new ForBindTask(sink, t, split.head);
+				ForBindTask task2 = new ForBindTask(sink.fork(), t, split.tail);
+				task2.fork();
+				task1.compute();
+				task2.join();
+			} else {
+				ArrayDeque<Task> queue = new ArrayDeque<Task>();
+				while (true) {
+					ForBindTask task = new ForBindTask(sink, t, split.head);
+					if (split.tail != null) {
+						sink = sink.fork();
+					}
+					FJControl.POOL.dispatch(task);
+					queue.add(task);
+					if (split.tail == null) {
+						break;
+					}
+					if (queue.size() == 6) {
+						queue.poll().join();
+					}
+					split = split.tail.split(100, 100);
+				}
+				for (Task t = queue.poll(); t != null; t = queue.poll()) {
+					t.join();
+				}
+			}
+		}
+
+		private void process(Iter it) throws QueryException {
+			sink.begin();
 			try {
 				Item i;
 				int size = bufSize();
-				Item[] buf = new Item[size];
+				Tuple[] buf = new Tuple[size];
 				int len = 0;
 				while ((i = it.next()) != null) {
 					buf[len++] = i;
 					if (len == size) {
-						emit(pool, qsize, queue, buf, len);
-						buf = new Item[size];
+						emit(buf, len);
+						buf = new Tuple[size];
 						len = 0;
 					}
 				}
 				if (len > 0) {
-					emit(pool, qsize, queue, buf, len);
+					emit(buf, len);
 				}
-				drainQueue(queue);
+			} catch (QueryException e) {
+				sink.fail();
+				throw e;
 			} finally {
 				it.close();
 			}
-			sink.begin();
 			sink.end();
-		}
-
-		private void emit(Pool pool, int qsize, Queue<EmitTask> queue,
-				Item[] buf, int len) throws QueryException {
-			Sink ss = sink;
-			sink = sink.fork();
-			EmitTask et = new EmitTask(ss, t, buf, len, pos);
-			pos = (IntNumeric) ((pos != null) ? pos.add(new Int32(len)) : null);
-			if (pool.dispatch(et)) {
-				queue.add(et);
-				if (queue.size() == qsize) {
-					maintainQueue(queue);
-				}
-			} else {
-				et.join();
-			}
-		}
-
-		private void drainQueue(Queue<EmitTask> queue) {
-			EmitTask et;
-			while ((et = queue.poll()) != null) {
-				if (!et.finished()) {
-					et.join();
-				}
-			}
-		}
-
-		private void maintainQueue(Queue<EmitTask> queue) {
-			int size = queue.size();
-			int cleared = 0;
-			EmitTask et;
-			for (int i = 0; i < size; i++) {
-				et = queue.poll();
-				if (et.finished()) {
-					cleared++;
-				} else {
-					queue.add(et);
-				}
-			}
-			if (cleared == 0) {
-				queue.poll().join();
-			}
-//			EmitTask et;
-//			while (((et = queue.poll()) != null) && (!et.finished()));
-		}
-
-		private int bufSize() {
-			// TODO
-			return 50;
-		}
-	}
-
-	private class EmitTask extends Task {
-		final Sink s;
-		final Tuple t;
-		final Item[] items;
-		final int len;
-		IntNumeric pos;
-
-		public EmitTask(Sink s, Tuple t, Item[] items, int len, IntNumeric pos) {
-			this.s = s;
-			this.t = t;
-			this.items = items;
-			this.len = len;
-			this.pos = pos;
-		}
-
-		@Override
-		public void compute() throws QueryException {
-			s.begin();
-			try {
-				Tuple[] buf = new Tuple[len];
-				for (int i = 0; i < len; i++) {
-					buf[i] = emit(t, items[i]);
-				}
-				s.output(buf, len);
-				s.end();
-			} catch (QueryException e) {
-				s.fail();
-				throw e;
-			} catch (Throwable e) {
-				s.fail();
-				throw new QueryException(e, ErrorCode.BIT_DYN_INT_ERROR);
-			}
 		}
 
 		private Tuple emit(Tuple t, Sequence item) throws QueryException {
@@ -321,16 +163,28 @@ public class ForBind implements Block {
 				return t;
 			}
 		}
+
+		private void emit(Tuple[] buf, int len) throws QueryException {
+			for (int i = 0; i < len; i++) {
+				buf[i] = emit(t, (Sequence) buf[i]);
+			}
+			sink.output(buf, len);
+		}
+
+		private int bufSize() {
+			// TODO
+			return 200;
+		}
 	}
 
-	private class ForBindTask extends Task {
+	private class OutputTask extends Task {
 		private final QueryContext ctx;
 		private final Tuple[] buf;
 		private final int start;
 		private final int end;
 		private Sink sink;
 
-		public ForBindTask(QueryContext ctx, Sink sink, Tuple[] buf, int start,
+		public OutputTask(QueryContext ctx, Sink sink, Tuple[] buf, int start,
 				int end) {
 			this.ctx = ctx;
 			this.sink = sink;
@@ -343,18 +197,18 @@ public class ForBind implements Block {
 		public void compute() throws QueryException {
 			if (end - start > 50) {
 				int mid = start + ((end - start) / 2);
-				ForBindTask a = new ForBindTask(ctx, sink.fork(), buf, mid, end);
-				ForBindTask b = new ForBindTask(ctx, sink, buf, start, mid);
+				OutputTask a = new OutputTask(ctx, sink.fork(), buf, mid, end);
+				OutputTask b = new OutputTask(ctx, sink, buf, start, mid);
 				a.fork();
 				b.compute();
 				a.join();
 			} else {
 				for (int i = start; i < end; i++) {
 					Sequence s = expr.evaluate(ctx, buf[i]);
-					Sink ss = sink;
-					sink = sink.fork();
 					if (s != null) {
-						ProduceTask t = new ProduceTask(ss, buf[i], s);
+						Sink ss = sink;
+						sink = sink.fork();
+						ForBindTask t = new ForBindTask(ss, buf[i], s.iterate());
 						t.compute();
 					}
 				}
@@ -378,7 +232,7 @@ public class ForBind implements Block {
 			// fork sink for future output calls
 			Sink ss = s;
 			s = s.fork();
-			ForBindTask task = new ForBindTask(ctx, ss, t, 0, len);
+			OutputTask task = new OutputTask(ctx, ss, t, 0, len);
 			task.compute();
 		}
 

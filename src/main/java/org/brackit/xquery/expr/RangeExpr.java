@@ -48,8 +48,96 @@ import org.brackit.xquery.xdm.Type;
  * 
  */
 public class RangeExpr implements Expr {
+
 	protected final Expr leftExpr;
 	protected final Expr rightExpr;
+
+	private static final class RangeSequence extends AbstractSequence {
+		final IntNumeric start;
+		final IntNumeric end;
+
+		private RangeSequence(IntNumeric s, IntNumeric e) {
+			start = s;
+			end = e;
+		}
+
+		@Override
+		public boolean booleanValue() throws QueryException {
+			if (!size().eq(Int32.ONE)) {
+				throw new QueryException(ErrorCode.ERR_INVALID_ARGUMENT_TYPE,
+						"Effective boolean value is undefined "
+								+ "for sequences with two or more items "
+								+ "not starting with a node");
+			}
+			return start.booleanValue();
+		}
+
+		@Override
+		public IntNumeric size() throws QueryException {
+			return (IntNumeric) end.subtract(start).add(Int32.ONE);
+		}
+
+		@Override
+		public Iter iterate() {
+			return new RangeIter(start, end);
+		}
+
+		@Override
+		public Item get(IntNumeric pos) throws QueryException {
+			if (Int32.ZERO.cmp(pos) >= 0) {
+				return null;
+			}
+			if (size().cmp(pos) < 0) {
+				return null;
+			}
+			return (IntNumeric) start.add(pos).subtract(Int32.ONE);
+		}
+	}
+
+	private static final class RangeIter extends BaseIter {
+		IntNumeric current;
+		IntNumeric end;
+
+		private RangeIter(IntNumeric start, IntNumeric end) {
+			this.current = start;
+			this.end = end;
+		}
+
+		@Override
+		public void close() {
+		}
+
+		@Override
+		public Item next() throws QueryException {
+			if (current.cmp(end) > 0)
+				return null;
+
+			IntNumeric res = current;
+			current = current.inc();
+			return res;
+		}
+
+		@Override
+		public void skip(IntNumeric i) throws QueryException {
+			if (i.cmp(Int32.ZERO) <= 0) {
+				return;
+			}
+			current = (IntNumeric) current.add(i);
+		}
+
+		@Override
+		public Split split(int min, int max) throws QueryException {						
+			IntNumeric remaining = (IntNumeric) end.subtract(current);
+			if (remaining.cmp(new Int32(min)) < 0) {
+				return new Split(this, null, false);
+			}
+			IntNumeric mid = (IntNumeric) current.add(remaining
+					.idiv(Int32.ZERO_TWO_TWENTY[2]));
+			RangeIter head = new RangeIter(current, mid);
+			current = mid.inc();
+			return new Split(head, this, false);
+		}
+	}
 
 	public RangeExpr(Expr leftExpr, Expr rightExpr) {
 		this.leftExpr = leftExpr;
@@ -125,70 +213,7 @@ public class RangeExpr implements Expr {
 		} else if (comparison == 0) {
 			return left;
 		} else {
-			final IntNumeric s = (IntNumeric) left;
-			final IntNumeric e = (IntNumeric) right;
-
-			return new AbstractSequence() {
-				private final IntNumeric start = s;
-				private final IntNumeric end = e;
-
-				@Override
-				public boolean booleanValue() throws QueryException {
-					if (!size().eq(Int32.ONE)) {
-						throw new QueryException(
-								ErrorCode.ERR_INVALID_ARGUMENT_TYPE,
-								"Effective boolean value is undefined "
-										+ "for sequences with two or more items "
-										+ "not starting with a node");
-					}
-					return start.booleanValue();
-				}
-
-				@Override
-				public IntNumeric size() throws QueryException {
-					return (IntNumeric) end.subtract(start).add(Int32.ONE);
-				}
-
-				@Override
-				public Iter iterate() {
-					return new BaseIter() {
-						IntNumeric current = start;
-
-						@Override
-						public void close() {
-						}
-
-						@Override
-						public Item next() throws QueryException {
-							if (current.cmp(e) > 0)
-								return null;
-
-							IntNumeric res = current;
-							current = current.inc();
-							return res;
-						}
-
-						@Override
-						public void skip(IntNumeric i) throws QueryException {
-							if (i.cmp(Int32.ZERO) <= 0) {
-								return;
-							}
-							current = (IntNumeric) current.add(i);
-						}
-					};
-				}
-
-				@Override
-				public Item get(IntNumeric pos) throws QueryException {
-					if (Int32.ZERO.cmp(pos) >= 0) {
-						return null;
-					}
-					if (size().cmp(pos) < 0) {
-						return null;
-					}
-					return (IntNumeric) start.add(pos).subtract(Int32.ONE);
-				}
-			};
+			return new RangeSequence((IntNumeric) left, (IntNumeric) right);
 		}
 	}
 

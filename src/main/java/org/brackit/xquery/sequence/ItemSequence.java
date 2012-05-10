@@ -41,6 +41,7 @@ import org.brackit.xquery.xdm.Node;
  * 
  */
 public class ItemSequence extends AbstractSequence {
+
 	protected final Item[] items;
 
 	public ItemSequence(Item... items) {
@@ -79,18 +80,7 @@ public class ItemSequence extends AbstractSequence {
 
 	@Override
 	public Iter iterate() {
-		return new BaseIter() {
-			int pos = 0;
-
-			@Override
-			public Item next() {
-				return (pos < items.length) ? items[pos++] : null;
-			}
-
-			@Override
-			public void close() {
-			}
-		};
+		return new ItemIter(items, 0, items.length);
 	}
 
 	public String toString() {

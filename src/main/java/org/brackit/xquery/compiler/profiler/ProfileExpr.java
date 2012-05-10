@@ -76,8 +76,10 @@ public class ProfileExpr extends ProfilingNode implements Expr {
 		final Iter it;
 		int delivered;
 		int skipCnt;
+		int splitCnt;
 		long time;
 		long skipTime;
+		long splitTime;
 
 		StatIter(Iter it) {
 			this.it = it;
@@ -101,6 +103,16 @@ public class ProfileExpr extends ProfilingNode implements Expr {
 			long end = System.nanoTime();
 			skipTime += (end - start);
 			skipCnt++;
+		}
+
+		@Override
+		public Split split(int min, int max) throws QueryException {
+			long start = System.nanoTime();
+			Split split = it.split(min, max);
+			long end = System.nanoTime();
+			splitTime += (end - start);
+			splitCnt++;
+			return split;
 		}
 
 		public void close() {

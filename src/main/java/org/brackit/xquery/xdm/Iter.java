@@ -53,6 +53,19 @@ import org.brackit.xquery.atomic.IntNumeric;
  * 
  */
 public interface Iter {
+	
+	public class Split {
+		public final Iter head;
+		public final Iter tail;
+		public final boolean serial;
+		
+		public Split(Iter head, Iter tail, boolean serial) {
+			this.head = head;
+			this.tail = tail;
+			this.serial = serial;
+		}
+	}
+
 	/**
 	 * Get the next item
 	 */
@@ -62,6 +75,21 @@ public interface Iter {
 	 * Skip the next <code>i</code> items
 	 */
 	public void skip(IntNumeric i) throws QueryException;
+
+	/**
+	 * <p>
+	 * Split separate iterator for the first half of the 
+	 * remaining items. Implementations should try to 
+	 * split into equally-sized halves of at least <code>min</code>
+	 * items, but buffer at most <code>max</code> items in memory 
+	 * if they need to.
+	 * </p>
+	 * <p>
+	 * Of the returned iterators, the last one is the
+	 * repositioned current iterator. 
+	 * </p>     
+	 */
+	public Split split(int min, int max) throws QueryException;
 
 	/**
 	 * Close the iterator to release all resources. 

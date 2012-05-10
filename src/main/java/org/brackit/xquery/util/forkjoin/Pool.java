@@ -49,10 +49,12 @@ public class Pool {
 	private final int size;
 	private final Worker[] workers;
 	private final ConcurrentLinkedQueue<Worker> inactive;
+	private final ConcurrentLinkedQueue<Task> queue;
 
 	public Pool(int size, WorkerFactory factory) {
 		this.size = size;
 		inactive = new ConcurrentLinkedQueue<Worker>();
+		queue = new ConcurrentLinkedQueue<Task>();
 		workers = new Worker[size];
 		for (int i = 0; i < size; i++) {
 			workers[i] = factory.newThread(this);
@@ -127,10 +129,8 @@ public class Pool {
 			LockSupport.unpark(w);
 			return true;
 		} else {
-			w = workers[rnd.nextInt(size)];
-			w.push(task);
-			LockSupport.unpark(w);
-			return (w != Thread.currentThread());
+			queue.add(task);
+			return false;
 		}
 	}
 
@@ -144,6 +144,9 @@ public class Pool {
 				retry = 0;
 			} else if ((t = stealTask(w)) != null) {
 				// process stolen task from other thread
+				t.exec();
+				retry = 0;
+			} else if ((t = queue.poll()) != null) {
 				t.exec();
 				retry = 0;
 			} else if (++retry == 16) {
@@ -163,6 +166,9 @@ public class Pool {
 				exec(w, t);
 				retry = 0;
 			} else if ((t = stealTask(w)) != null) {
+				t.exec();
+				retry = 0;
+			} else if ((t = queue.poll()) != null) {
 				t.exec();
 				retry = 0;
 			} else if (++retry == 64) {

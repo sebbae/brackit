@@ -28,46 +28,43 @@
 package org.brackit.xquery.sequence;
 
 import org.brackit.xquery.QueryException;
-import org.brackit.xquery.atomic.Int32;
-import org.brackit.xquery.atomic.IntNumeric;
-import org.brackit.xquery.xdm.DocumentException;
 import org.brackit.xquery.xdm.Item;
 import org.brackit.xquery.xdm.Iter;
 
 /**
  * 
  * @author Sebastian Baechle
- * 
+ *
  */
-public class AtomIter implements Iter {
+public class ItemIter extends BaseIter {
+	final Item[] items;
+	int end;
+	int pos = 0;
+	
+	public ItemIter(Item[] items, int pos, int end) {
+		this.items = items;
+		this.end = end;
+		this.pos = pos;
+	}
 
-	private Item atom;
+	@Override
+	public Item next() {
+		return (pos < end) ? items[pos++] : null;
+	}
 
-	public AtomIter(Item atom) {
-		this.atom = atom;
+	@Override
+	public Split split(int min, int max) throws QueryException {						
+		int remaining = end - pos;
+		if (remaining < min) {
+			return new Split(this, null, false);
+		}
+		int mid = pos + (remaining / 2);
+		Iter head = new ItemIter(items, pos, mid);
+		pos = mid;
+		return new Split(head, this, false);
 	}
 
 	@Override
 	public void close() {
-		atom = null;
-	}
-
-	@Override
-	public Item next() throws DocumentException {
-		Item deliver = atom;
-		atom = null;
-		return deliver;
-	}
-
-	@Override
-	public void skip(IntNumeric i) throws QueryException {
-		if (i.cmp(Int32.ZERO) >= 0) {
-			atom = null;
-		}
-	}
-
-	@Override
-	public Split split(int min, int max) throws QueryException {
-		return new Split(this, null, false);
 	}
 }
