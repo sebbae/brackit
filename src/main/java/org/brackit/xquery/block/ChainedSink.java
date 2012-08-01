@@ -27,6 +27,8 @@
  */
 package org.brackit.xquery.block;
 
+import java.util.concurrent.locks.LockSupport;
+
 import org.brackit.xquery.ErrorCode;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
@@ -42,6 +44,8 @@ import org.brackit.xquery.util.forkjoin.Worker;
  */
 public abstract class ChainedSink implements Sink {
 
+	private static final boolean SUSPEND = true;
+
 	private static final int NO_TOKEN = 0;
 	private static final int WAIT_TOKEN = 1;
 	private static final int HAS_TOKEN = 2;
@@ -51,6 +55,7 @@ public abstract class ChainedSink implements Sink {
 	private ChainedSink next;
 	private volatile int state;
 	private volatile Deque<Task> deposit;
+	private volatile Thread blocked;
 
 	public ChainedSink() {
 		this.state = HAS_START_TOKEN;
@@ -163,8 +168,12 @@ public abstract class ChainedSink implements Sink {
 				// deposit reference to work queue
 				// for expected hand-over
 				worker = (Worker) Thread.currentThread();
-				queue = worker.getQueue();
-				deposit = queue;
+				if (!SUSPEND) {
+					queue = worker.getQueue();
+					deposit = queue;
+				} else {
+					blocked = worker;
+				}
 			}
 
 			// attempt to put predecessor in
@@ -174,8 +183,12 @@ public abstract class ChainedSink implements Sink {
 				// or token was not granted concurrently
 				if ((hasPending)
 						&& ((yield()) || (!compareAndSet(queue, null)))) {
-					// drop local queue
-					worker.dropQueue();
+					if (!SUSPEND) {
+						// drop local queue
+						worker.dropQueue();
+					} else {
+						LockSupport.park(this);
+					}
 				}
 				return;
 			}
@@ -242,6 +255,9 @@ public abstract class ChainedSink implements Sink {
 	}
 
 	private void takeover(ChainedSink n) throws QueryException {
+		if (SUSPEND) {
+			LockSupport.unpark(n.blocked);
+		}
 		if (n.hasPending()) {
 			n.processPending();
 		}
