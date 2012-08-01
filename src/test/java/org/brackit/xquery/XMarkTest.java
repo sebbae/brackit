@@ -125,6 +125,8 @@ public abstract class XMarkTest extends XQueryBaseTest {
 		PrintStream buffer = createBuffer();
 		XQuery query = xquery(readQuery(QUERY_DIR, "q08.xq"));
 		query.serialize(ctx, buffer);
+		System.out.println(buffer);
+		System.out.println(readFile(RESULT_DIR, "q08.out"));
 		assertEquals(readFile(RESULT_DIR, "q08.out"), buffer.toString());
 	}
 

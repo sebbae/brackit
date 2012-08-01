@@ -70,19 +70,23 @@ public class JoinGroupDemarcation extends ScopeWalker {
 		// locate farthest scope we can go to
 		AST parent = join.getParent();
 		AST anc = parent;
-		while ((anc != stopAt) && (independentOf(anc))) {
-			anc = anc.getParent();
-		}
-
-		// let-bindings are "static" within an iteration;
-		// we may safely increase the scope
-		while (anc.getType() == XQ.LetBind) {
-			anc = anc.getParent();
-		}
-
-		if ((anc.getType() == XQ.Start)
-				&& (anc.getParent().getType() != XQ.Join)) {
-			return join;
+		boolean reachedStopAt = false;
+		while (true) {
+			reachedStopAt = (reachedStopAt || (anc == stopAt));   
+			if (anc.getType() == XQ.Start) {
+				if (anc.getParent().getType() != XQ.Join) {
+					return join;
+				}
+				anc = anc.getParent().getParent();
+			} else if (anc.getType() == XQ.LetBind) {
+				// let-bindings are "static" within an iteration;
+				// we may safely increase the scope
+				anc = anc.getParent();	
+			} else if (reachedStopAt) {
+				break;
+			} else {
+				anc = anc.getParent();
+			}
 		}
 
 		// prepend an artificial count for
@@ -98,10 +102,5 @@ public class JoinGroupDemarcation extends ScopeWalker {
 		anc.replaceChild(anc.getChildCount() - 1, count);
 		refreshScopes(anc, true);
 		return anc;
-	}
-
-	private boolean independentOf(AST anc) {
-		int type = anc.getType();
-		return ((type != XQ.Start) || (anc.getParent().getType() == XQ.Join));
 	}
 }

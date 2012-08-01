@@ -28,6 +28,7 @@
 package org.brackit.xquery;
 
 import java.io.FileNotFoundException;
+import java.io.IOException;
 
 import org.brackit.xquery.compiler.optimizer.DefaultOptimizer;
 import org.brackit.xquery.util.Cfg;
@@ -45,5 +46,11 @@ public class XMarkTestUnnestedJoin extends XMarkTest {
 		DefaultOptimizer.UNNEST = true;
 		Cfg.set(DefaultOptimizer.JOIN_DETECTION_CFG, true);
 		DefaultOptimizer.JOIN_DETECTION = true;
+	}
+
+	@Override
+	protected String readQuery(String dirname, String filename)
+			throws IOException {
+		return "declare option bit:push-evaluation 'true'; " + super.readQuery(dirname, filename);
 	}
 }

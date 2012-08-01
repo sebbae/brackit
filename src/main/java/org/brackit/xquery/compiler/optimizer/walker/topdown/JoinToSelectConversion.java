@@ -27,83 +27,38 @@
  */
 package org.brackit.xquery.compiler.optimizer.walker.topdown;
 
-import static org.brackit.xquery.compiler.XQ.TypedVariableBinding;
-import static org.brackit.xquery.compiler.XQ.Variable;
-
-import java.util.ArrayList;
-import java.util.List;
-
-import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.compiler.AST;
 import org.brackit.xquery.compiler.XQ;
 import org.brackit.xquery.compiler.optimizer.walker.Walker;
+import org.brackit.xquery.util.Cmp;
 
 /**
  * @author Sebastian Baechle
  * 
  */
-public class PullEvaluation extends Walker {
-
-	private int checkVar;
-
-	private List<QNm> appendCheck(List<QNm> checks, QNm var) {
-		ArrayList<QNm> l = (checks == null) ? new ArrayList<QNm>()
-				: new ArrayList<QNm>(checks);
-		l.add(var);
-		return l;
-	}
-
-	private QNm createCheckVarName() {
-		return new QNm("_check;" + (checkVar++));
-	}
+public class JoinToSelectConversion extends Walker {
 
 	@Override
 	protected AST visit(AST join) {
-		if ((join.getType() != XQ.Join) || (!join.checkProperty("leftJoin"))) {
+		if ((join.getType() != XQ.Join) || (join.checkProperty("leftJoin"))) {
 			return join;
 		}
-		AST post = join.getChild(2);
-		boolean hasPost = (post.getChild(0).getType() != XQ.End);
-		if (!hasPost) {
+		AST lEnd = join.getChild(0).getChild(0);
+		AST rEnd = join.getChild(1).getChild(0);
+		if ((lEnd.getType() != XQ.End) || (rEnd.getType() != XQ.End)) {
 			return join;
 		}
 
-		@SuppressWarnings("unchecked")
-		List<QNm> check = (List<QNm>) join.getProperty("check");
-
-		// prepend a check counter to the left input
-		QNm postJoinVar = createCheckVarName();
-		AST count = new AST(XQ.Count);
-		AST runVarBinding = new AST(TypedVariableBinding);
-		runVarBinding.addChild(new AST(Variable, postJoinVar));
-		count.addChild(runVarBinding);
-		if (check != null) {
-			count.setProperty("check", check);
-		}
-
-		AST lstart = join.getChild(0);
-		AST left = lstart.getChild(0);
-		lstart.replaceChild(0, count);
-		count.addChild(left);
-		
-		// add check markers to the join and the post-join part with
-		List<QNm> check2 = appendCheck(check, postJoinVar);
-		
-		// add check markers to the left input
-		AST tmp = left;
-		while (tmp.getType() != XQ.End) {
-			tmp.setProperty("check", check2);
-			tmp = tmp.getLastChild();
-		}
-		
-		tmp = post;
-		while (tmp.getType() != XQ.End) {
-			tmp.setProperty("check", check2);
-			tmp = tmp.getLastChild();
-		}
-		join.setProperty("check", check2);
-
-		snapshot();
-		return join;
+		Cmp cmp = (Cmp) join.getProperty("cmp");
+		boolean isGCmp = join.checkProperty("GCmp");
+		AST predicate = new AST(XQ.ComparisonExpr);
+		predicate.addChild(new AST(CmpUtil.type(cmp, isGCmp)));
+		predicate.addChild(lEnd.getChild(0));
+		predicate.addChild(rEnd.getChild(0));
+		AST select = new AST(XQ.Selection);
+		select.addChild(predicate);
+		select.addChild(join.getLastChild());
+		join.getParent().replaceChild(join.getChildIndex(), select);
+		return join.getParent();
 	}
 }

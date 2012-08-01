@@ -27,83 +27,53 @@
  */
 package org.brackit.xquery.compiler.optimizer.walker.topdown;
 
-import static org.brackit.xquery.compiler.XQ.TypedVariableBinding;
-import static org.brackit.xquery.compiler.XQ.Variable;
-
-import java.util.ArrayList;
-import java.util.List;
+import static org.brackit.xquery.module.Namespaces.FN_NSURI;
+import static org.brackit.xquery.module.Namespaces.FN_PREFIX;
 
 import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.compiler.AST;
 import org.brackit.xquery.compiler.XQ;
-import org.brackit.xquery.compiler.optimizer.walker.Walker;
 
 /**
  * @author Sebastian Baechle
- * 
+ *
  */
-public class PullEvaluation extends Walker {
+public abstract class AggFunChecker extends ScopeWalker {
 
-	private int checkVar;
+	protected static final QNm FN_COUNT = new QNm(FN_NSURI, FN_PREFIX, "count");
+	protected static final QNm FN_SUM = new QNm(FN_NSURI, FN_PREFIX, "sum");
+	protected static final QNm FN_AVG = new QNm(FN_NSURI, FN_PREFIX, "avg");
+	protected static final QNm FN_MIN = new QNm(FN_NSURI, FN_PREFIX, "min");
+	protected static final QNm FN_MAX = new QNm(FN_NSURI, FN_PREFIX, "max");
+	protected static final QNm[] aggFuns = new QNm[] { FN_COUNT, FN_SUM, FN_AVG,
+				FN_MIN, FN_MAX };
+	protected static final int[] aggFunMap = new int[] { XQ.CountAgg, XQ.SumAgg,
+				XQ.AvgAgg, XQ.MinAgg, XQ.MaxAgg };
 
-	private List<QNm> appendCheck(List<QNm> checks, QNm var) {
-		ArrayList<QNm> l = (checks == null) ? new ArrayList<QNm>()
-				: new ArrayList<QNm>(checks);
-		l.add(var);
-		return l;
+
+	protected QNm replaceRef(AST node, QNm name) {
+		node.getParent().replaceChild(node.getChildIndex(),
+				new AST(XQ.VariableRef, name));
+		return name;
 	}
 
-	private QNm createCheckVarName() {
-		return new QNm("_check;" + (checkVar++));
+	protected int aggFunType(int type) {
+		switch (type) {
+		case XQ.CountAgg:
+			return 0;
+		case XQ.SumAgg:
+			return 1;
+		case XQ.AvgAgg:
+			return 2;
+		case XQ.MinAgg:
+			return 3;
+		case XQ.MaxAgg:
+			return 4;
+		case XQ.SequenceAgg:
+		default:
+			throw new RuntimeException("Unexpected aggregate function type: "
+					+ type);
+		}
 	}
 
-	@Override
-	protected AST visit(AST join) {
-		if ((join.getType() != XQ.Join) || (!join.checkProperty("leftJoin"))) {
-			return join;
-		}
-		AST post = join.getChild(2);
-		boolean hasPost = (post.getChild(0).getType() != XQ.End);
-		if (!hasPost) {
-			return join;
-		}
-
-		@SuppressWarnings("unchecked")
-		List<QNm> check = (List<QNm>) join.getProperty("check");
-
-		// prepend a check counter to the left input
-		QNm postJoinVar = createCheckVarName();
-		AST count = new AST(XQ.Count);
-		AST runVarBinding = new AST(TypedVariableBinding);
-		runVarBinding.addChild(new AST(Variable, postJoinVar));
-		count.addChild(runVarBinding);
-		if (check != null) {
-			count.setProperty("check", check);
-		}
-
-		AST lstart = join.getChild(0);
-		AST left = lstart.getChild(0);
-		lstart.replaceChild(0, count);
-		count.addChild(left);
-		
-		// add check markers to the join and the post-join part with
-		List<QNm> check2 = appendCheck(check, postJoinVar);
-		
-		// add check markers to the left input
-		AST tmp = left;
-		while (tmp.getType() != XQ.End) {
-			tmp.setProperty("check", check2);
-			tmp = tmp.getLastChild();
-		}
-		
-		tmp = post;
-		while (tmp.getType() != XQ.End) {
-			tmp.setProperty("check", check2);
-			tmp = tmp.getLastChild();
-		}
-		join.setProperty("check", check2);
-
-		snapshot();
-		return join;
-	}
 }

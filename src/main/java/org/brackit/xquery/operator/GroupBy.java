@@ -45,7 +45,6 @@ import org.brackit.xquery.function.FunctionExpr;
 import org.brackit.xquery.function.bit.Delay;
 import org.brackit.xquery.util.aggregator.Aggregate;
 import org.brackit.xquery.util.aggregator.Grouping;
-import org.brackit.xquery.xdm.Sequence;
 
 /**
  * @author Sebastian Baechle
@@ -57,7 +56,6 @@ public class GroupBy extends Check implements Operator {
 	final int[] addAggSpecs;
 	final Aggregate defaultAgg;
 	final Aggregate[] addAggs;
-	final Sequence[] padding;
 	final boolean sequential;
 
 	public GroupBy(Operator in, Aggregate dftAgg, Aggregate[] addAggs,
@@ -68,11 +66,6 @@ public class GroupBy extends Check implements Operator {
 		this.groupSpecs = new int[grpSpecCnt];
 		this.addAggSpecs = new int[addAggs.length];
 		this.sequential = sequential;
-		if (addAggs.length > 0) {
-			this.padding = new Sequence[addAggs.length];
-		} else {
-			this.padding = null;
-		}
 	}
 
 	private class SequentialGroupBy implements Cursor {
@@ -107,7 +100,8 @@ public class GroupBy extends Check implements Operator {
 
 			// pass through
 			if ((check) && (dead(t))) {
-				return (padding == null) ? t : t.concat(padding);
+				Tuple emit = grp.singleEmit(t);
+				return emit;
 			}
 
 			grp.add(t);
@@ -212,7 +206,11 @@ public class GroupBy extends Check implements Operator {
 					if ((check) && (dead(t))) {
 						if (map.isEmpty()) {
 							next = null;
-							return (padding == null) ? t : t.concat(padding);
+							Grouping grp = new Grouping(groupSpecs, addAggSpecs, defaultAgg,
+									addAggs, tupleSize);
+							grp.add(t);
+							Tuple emit = grp.emit();
+							return emit;
 						} else {
 							// keep next and output grouping map first
 							it = map.keySet().iterator();
@@ -253,14 +251,76 @@ public class GroupBy extends Check implements Operator {
 		}
 	}
 
+	private class AllGroupBy implements Cursor {
+		final Cursor c;
+		final Grouping grp;
+		Tuple next;
+
+		public AllGroupBy(Cursor c, int tupleSize) {
+			this.c = c;
+			this.grp = new Grouping(groupSpecs, addAggSpecs, defaultAgg,
+					addAggs, tupleSize);
+		}
+
+		@Override
+		public void open(QueryContext ctx) throws QueryException {
+			c.open(ctx);
+		}
+
+		@Override
+		public void close(QueryContext ctx) {
+			grp.clear();
+			c.close(ctx);
+		}
+
+		@Override
+		public Tuple next(QueryContext ctx) throws QueryException {
+			while (true) {
+				// output groups
+				if (grp.getSize() > 0) {
+					Tuple emit = grp.emit();
+					grp.clear();
+					return emit;
+				}
+
+				// load groups
+				Tuple t;
+				if (((t = next) != null) || ((t = c.next(ctx)) != null)) {
+					if ((check) && (dead(t))) {
+						if (grp.getSize() == 0) {
+							next = null;
+							Tuple emit = grp.singleEmit(t);
+							return emit;
+						} else {
+							// keep next and output grouping map first
+							continue;
+						}
+					}
+
+					grp.add(null, t);
+					while ((next = c.next(ctx)) != null) {
+						if ((check) && (separate(t, next))) {
+							break;
+						}
+						grp.add(null, next);
+					}
+				} else {
+					return null;
+				}
+			}
+		}
+	}
+
 	@Override
 	public Cursor create(QueryContext ctx, Tuple tuple) throws QueryException {
 		Cursor c = in.create(ctx, tuple);
 		int tupleSize = in.tupleWidth(tuple.getSize());
-		if (sequential) {
+		if (groupSpecs.length == 0) {
+			return new AllGroupBy(c, tupleSize);
+		} else if (sequential) {
 			return new SequentialGroupBy(c, tupleSize);
 		} else {
-			return new HashGroupBy(c, tupleSize);			
+			return new HashGroupBy(c, tupleSize);
 		}
 	}
 
@@ -269,10 +329,12 @@ public class GroupBy extends Check implements Operator {
 			throws QueryException {
 		Cursor c = in.create(ctx, buf, len);
 		int tupleSize = in.tupleWidth(buf[0].getSize());
-		if (sequential) {
+		if (groupSpecs.length == 0) {
+			return new AllGroupBy(c, tupleSize);
+		} else if (sequential) {
 			return new SequentialGroupBy(c, tupleSize);
 		} else {
-			return new HashGroupBy(c, tupleSize);			
+			return new HashGroupBy(c, tupleSize);
 		}
 	}
 
@@ -296,7 +358,7 @@ public class GroupBy extends Check implements Operator {
 			}
 		};
 	}
-	
+
 	public static void main(String[] args) throws Exception {
 		Start s = new Start();
 		ForBind forBind2 = new ForBind(s, new SequenceExpr(new Str("a"),

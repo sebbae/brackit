@@ -45,6 +45,7 @@ import org.brackit.xquery.compiler.AST;
 import org.brackit.xquery.compiler.Bits;
 import org.brackit.xquery.compiler.XQ;
 import org.brackit.xquery.compiler.optimizer.walker.Walker;
+import org.brackit.xquery.module.StaticContext;
 import org.brackit.xquery.util.dot.DotContext;
 import org.brackit.xquery.util.dot.DotNode;
 import org.brackit.xquery.util.dot.DotUtil;
@@ -73,6 +74,14 @@ public abstract class ScopeWalker extends Walker {
 	private BindingTable table;
 
 	private int dotCount;
+
+	public ScopeWalker() {
+		super();
+	}
+
+	public ScopeWalker(StaticContext sctx) {
+		super(sctx);
+	}
 
 	@Override
 	protected AST prepare(AST root) {
@@ -218,7 +227,7 @@ public abstract class ScopeWalker extends Walker {
 				// System.out.println("Did not find " + var + " in any scope");
 				return null;
 			}
-			if ((toVar != null) && (toVar != null)) {
+			if ((toVar != null) && (toVar != var)) {
 				return null;
 			}
 			return new VarRef(var, node, s);
@@ -674,13 +683,19 @@ public abstract class ScopeWalker extends Walker {
 			groupVars.add((QNm) varRef.getValue());
 			pos++;
 		}
-		// groupby rebinds all non-grouped pipeline variables
-		for (Var var : table.inPipelineBindings()) {
-			if (!groupVars.contains(var.var)) {
-				table.bind(var.var, new SequenceType(var.type.getItemType(),
-						Cardinality.ZeroOrMany));
+		
+		AST dftAgg = node.getChild(node.getChildCount() - 2);
+		AST dftAggType = dftAgg.getChild(0);
+		if (dftAggType.getType() != XQ.SingleAgg) {
+			// groupby rebinds all non-grouped pipeline variables
+			for (Var var : table.inPipelineBindings()) {
+				if (!groupVars.contains(var.var)) {
+					table.bind(var.var, new SequenceType(var.type.getItemType(),
+							Cardinality.ZeroOrMany));
+				}
 			}
 		}
+		
 		// bind additional aggregation specs
 		while (node.getChild(pos).getType() == XQ.AggregateSpec) {
 			AST aggSpec = node.getChild(pos);
@@ -801,9 +816,7 @@ public abstract class ScopeWalker extends Walker {
 			walkInspect(postStart.getChild(0), true, bindOnly);
 			table.closeScope();
 
-			// start nested scope for output
-			AST outStart = node.getChild(3);
-			table.openScope(outStart, true);
+			// bind join output
 			for (Var var : leftInBinding) {
 				table.bind(var.var, var.type);
 			}
@@ -813,9 +826,7 @@ public abstract class ScopeWalker extends Walker {
 			for (Var var : postBinding) {
 				table.bind(var.var, var.type);
 			}
-			walkInspect(outStart.getChild(0), true, bindOnly);
-			table.closeScope();
-			table.closeScope();
+			walkInspect(node.getChild(3), true, bindOnly);			
 		} else {
 			// "pretend" to bind variables from both
 			// left and right input and output
@@ -831,6 +842,10 @@ public abstract class ScopeWalker extends Walker {
 			for (Var var : postBinding) {
 				table.bind(var.var, var.type);
 			}
+		}
+		
+		if (newScope) {
+			table.closeScope();
 		}
 	}
 

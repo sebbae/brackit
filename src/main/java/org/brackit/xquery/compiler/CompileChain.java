@@ -168,7 +168,7 @@ public class CompileChain {
 		return new XQParser(query).parse();
 	}
 
-	public Module compile(String query) throws QueryException {				
+	public Module compile(String query) throws QueryException {
 		if (XQuery.DEBUG) {
 			System.out.println(String.format("Compiling:\n%s", query));
 		}
@@ -188,6 +188,9 @@ public class CompileChain {
 		for (Target t : analyzer.getTargets()) {
 			t.optimize(getOptimizer(options));
 		}
+		if (XQuery.DEBUG) {
+			DotUtil.drawDotToFile(xquery.dot(), XQuery.DEBUG_DIR, "xquery");
+		}
 		// translate all targets of all modules
 		for (Target t : analyzer.getTargets()) {
 			t.translate(getTranslator(options));
@@ -197,9 +200,6 @@ public class CompileChain {
 			if (m.getTargetNS() != null) {
 				resolver.register(m.getTargetNS(), m);
 			}
-		}
-		if (XQuery.DEBUG) {
-			DotUtil.drawDotToFile(xquery.dot(), XQuery.DEBUG_DIR, "xquery");
 		}
 		return module;
 	}
