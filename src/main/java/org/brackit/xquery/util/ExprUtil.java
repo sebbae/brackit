@@ -66,6 +66,10 @@ public abstract class ExprUtil implements Expr {
 	}
 
 	public static Sequence materialize(Sequence res) throws QueryException {
+		return materialize(res, -1);
+	}
+	
+	public static Sequence materialize(Sequence res, int threshold) throws QueryException {
 		// TODO
 		// how to decide cleverly if we should materialize or not???
 		if ((res == null) || (res instanceof Item)) {
@@ -86,7 +90,10 @@ public abstract class ExprUtil implements Expr {
 			buffer.add(second);
 			Item item;
 			while ((item = it.next()) != null) {
-				buffer.add(item);
+				if (((threshold >= 0) && (buffer.size() > threshold))) {
+					return res;
+				}
+				buffer.add(item);				
 			}
 			return new ItemSequence(buffer.toArray(new Item[buffer.size()]));
 		} finally {

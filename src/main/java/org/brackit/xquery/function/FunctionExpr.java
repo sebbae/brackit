@@ -124,7 +124,7 @@ public class FunctionExpr implements Expr {
 		res = FunctionConversionSequence.asTypedSequence(function
 				.getSignature().getResultType(), res, builtin);
 
-		return ExprUtil.materialize(res);
+		return ExprUtil.materialize(res, 20);
 	}
 
 	@Override
