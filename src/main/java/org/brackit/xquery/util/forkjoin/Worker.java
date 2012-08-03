@@ -42,6 +42,7 @@ public class Worker extends Thread {
 
 	protected Worker(Pool pool, int no) {
 		super("FJWorker:" + no);
+		setDaemon(true);
 		this.stats = new WorkerStats(getId());
 		this.pool = pool;
 		this.deque = new SyncDeque<Task>();
