@@ -30,6 +30,7 @@ package org.brackit.xquery.compiler.optimizer.walker.topdown;
 import static org.brackit.xquery.module.Namespaces.FN_NSURI;
 import static org.brackit.xquery.module.Namespaces.FN_PREFIX;
 
+import org.brackit.xquery.atomic.Int32;
 import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.compiler.AST;
 import org.brackit.xquery.compiler.XQ;
@@ -52,6 +53,19 @@ public abstract class AggFunChecker extends ScopeWalker {
 
 
 	protected QNm replaceRef(AST node, QNm name) {
+		// TODO This is a dirty hack around issues 
+		// with the current implementation of TableJoin block (left join)
+		// which bypasses the GroupBy block of the post join pipeline and simply
+		// adds a padding with nulls to the current tuple 
+		if (FN_COUNT.atomicCmp((QNm) node.getValue()) == 0) {
+			AST ifThenElse = new AST(XQ.IfExpr);
+			ifThenElse.addChild(new AST(XQ.VariableRef, name));
+			ifThenElse.addChild(new AST(XQ.VariableRef, name));
+			ifThenElse.addChild(new AST(XQ.Int, Int32.ZERO));
+			node.getParent().replaceChild(node.getChildIndex(), ifThenElse);
+			return name;
+		}
+		
 		node.getParent().replaceChild(node.getChildIndex(),
 				new AST(XQ.VariableRef, name));
 		return name;
