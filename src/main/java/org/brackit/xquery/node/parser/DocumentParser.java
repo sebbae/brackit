@@ -53,7 +53,7 @@ public class DocumentParser implements SubtreeParser {
 
 	private final XMLReader xmlReader;
 
-	private final InputSource source;
+	private InputSource source;
 
 	private DTDHandler dtdHandler;
 
@@ -63,6 +63,10 @@ public class DocumentParser implements SubtreeParser {
 
 	private String baseDir;
 
+	public DocumentParser() throws DocumentException {
+		this((InputSource) null);
+	}
+	
 	public DocumentParser(File xmlFile) throws DocumentException,
 			FileNotFoundException {
 		this(new InputSource(new BufferedReader(new FileReader(xmlFile))));
@@ -87,6 +91,10 @@ public class DocumentParser implements SubtreeParser {
 		} catch (SAXException e) {
 			throw new DocumentException(e, "Error creating document parser.");
 		}
+	}
+	
+	public void use(InputSource source) {
+		this.source = source;
 	}
 
 	public void setParseAsFragment(boolean parseAsFragment) {

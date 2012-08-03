@@ -27,6 +27,8 @@
  */
 package org.brackit.xquery.function.bit;
 
+import java.io.StringReader;
+
 import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.atomic.QNm;
@@ -41,6 +43,7 @@ import org.brackit.xquery.xdm.type.AtomicType;
 import org.brackit.xquery.xdm.type.Cardinality;
 import org.brackit.xquery.xdm.type.DocumentType;
 import org.brackit.xquery.xdm.type.SequenceType;
+import org.xml.sax.InputSource;
 
 /**
  * 
@@ -49,6 +52,8 @@ import org.brackit.xquery.xdm.type.SequenceType;
  */
 public class Parse extends AbstractFunction {
 
+	private static final ThreadLocal<DocumentParser> builderLocal = new ThreadLocal<DocumentParser>();
+	
 	public static final QNm PARSE = new QNm(Bits.BIT_NSURI, Bits.BIT_PREFIX,
 			"parse");
 
@@ -65,6 +70,14 @@ public class Parse extends AbstractFunction {
 		if (s == null) {
 			return null;
 		}
-		return ctx.getNodeFactory().build(new DocumentParser(s.stringValue()));
-	}
+		InputSource in = new InputSource(new StringReader(s.stringValue()));
+		DocumentParser parser = builderLocal.get();		
+		if (parser == null) {
+			parser = new DocumentParser(in);
+			builderLocal.set(parser);
+		} else {
+			parser.use(in);
+		}
+		return ctx.getNodeFactory().build(parser);
+	}	
 }
