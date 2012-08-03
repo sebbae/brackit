@@ -33,6 +33,7 @@ import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
 import org.brackit.xquery.block.FJControl;
 import org.brackit.xquery.util.forkjoin.Task;
+import org.brackit.xquery.util.serialize.SerializationHandler;
 import org.brackit.xquery.xdm.Expr;
 import org.brackit.xquery.xdm.Item;
 import org.brackit.xquery.xdm.Sequence;
@@ -65,6 +66,13 @@ public class FJExpr implements Expr {
 		return task.getResult();
 	}
 
+	public void serialize(QueryContext ctx, Tuple t, SerializationHandler h) throws QueryException {
+		SerializationEval task = new SerializationEval(ctx, t, h);
+		FJControl.POOL.submit(task);
+		task.join();
+		task.getResult();
+	}
+
 	@Override
 	public boolean isUpdating() {
 		return expr.isUpdating();
@@ -94,6 +102,34 @@ public class FJExpr implements Expr {
 			Throwable e = getError();
 			if (e == null) {
 				return result;
+			}
+			if (e instanceof QueryException) {
+				throw (QueryException) e;
+			}
+			throw new QueryException(e, ErrorCode.BIT_DYN_INT_ERROR);
+		}
+	}
+	
+	private final class SerializationEval extends Task {
+		private final QueryContext ctx;
+		private final Tuple tuple;
+		private final SerializationHandler handler;
+
+		private SerializationEval(QueryContext ctx, Tuple tuple, SerializationHandler handler) {
+			this.ctx = ctx;
+			this.tuple = tuple;
+			this.handler = handler;
+		}
+
+		@Override
+		public void compute() throws Throwable {
+			((BlockExpr) expr).serialize(ctx, tuple, handler);
+		}
+		
+		public void getResult() throws QueryException {
+			Throwable e = getError();
+			if (e == null) {
+				return;
 			}
 			if (e instanceof QueryException) {
 				throw (QueryException) e;

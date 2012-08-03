@@ -31,10 +31,13 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 
 import org.brackit.xquery.compiler.CompileChain;
+import org.brackit.xquery.expr.BlockExpr;
+import org.brackit.xquery.expr.FJExpr;
 import org.brackit.xquery.module.Module;
 import org.brackit.xquery.operator.TupleImpl;
 import org.brackit.xquery.util.Cfg;
 import org.brackit.xquery.util.serialize.Serializer;
+import org.brackit.xquery.util.serialize.SerializationHandler;
 import org.brackit.xquery.util.serialize.StringSerializer;
 import org.brackit.xquery.xdm.Expr;
 import org.brackit.xquery.xdm.Item;
@@ -127,6 +130,10 @@ public class XQuery {
 			return;
 		}
 		serializer.serialize(result);
+	}
+	
+	public void serialize(QueryContext ctx, SerializationHandler handler) throws QueryException {
+		((FJExpr) module.getBody()).serialize(ctx, new TupleImpl(), handler);
 	}
 
 	public boolean isPrettyPrint() {

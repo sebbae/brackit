@@ -39,8 +39,10 @@ import org.brackit.xquery.sequence.FlatteningSequence;
 import org.brackit.xquery.util.ExprUtil;
 import org.brackit.xquery.util.forkjoin.Task;
 import org.brackit.xquery.util.join.FastList;
+import org.brackit.xquery.util.serialize.SerializationHandler;
 import org.brackit.xquery.xdm.Expr;
 import org.brackit.xquery.xdm.Item;
+import org.brackit.xquery.xdm.Iter;
 import org.brackit.xquery.xdm.Sequence;
 
 /**
@@ -71,6 +73,15 @@ public class BlockExpr implements Expr {
 
 		Sequence res = rs.asSequence();
 		return res;
+	}
+
+	public void serialize(QueryContext ctx, Tuple t, SerializationHandler handler) throws QueryException {
+		SerializerReturn rs = new SerializerReturn(ctx, expr, handler);
+		Sink end = (ordered) ? new SerialValve(FJControl.PERMITS, rs) : rs;
+		Sink start = block.create(ctx, end);
+
+		EvalBlock task = new EvalBlock(t, start);
+		FJControl.POOL.submit(task).join();
 	}
 
 	@Override
@@ -109,6 +120,77 @@ public class BlockExpr implements Expr {
 				start.fail();
 				throw e;
 			}
+		}
+	}
+	
+	private static class SerializerReturn extends MutexSink {
+		final QueryContext ctx;
+		final Expr expr;
+		final SerializationHandler handler;
+
+		private static class Result extends Out {
+			final Tuple[] buf;
+			final int len;
+
+			private Result(Tuple[] buf, int len) {
+				this.buf = buf;
+				this.len = len;
+			}
+		}
+
+		public SerializerReturn(QueryContext ctx, Expr expr, SerializationHandler handler) {
+			this.ctx = ctx;
+			this.expr = expr;
+			this.handler = handler;
+		}
+
+		@Override
+		public Sink partition(Sink stopAt) {
+			return fork();
+		}
+
+		@Override
+		protected Out doPreOutput(Tuple[] buf, int len) throws QueryException {
+			int nlen = 0;
+			for (int i = 0; i < len; i++) {
+				Sequence s = expr.evaluate(ctx, buf[i]);
+				if (s != null) {
+					buf[nlen++] = s;
+				}
+			}
+			return new Result(buf, nlen);
+		}
+
+		@Override
+		protected void doOutput(Out out) throws QueryException {
+			Result res = (Result) out;
+			for (Tuple t : res.buf) {
+				if (t != null) {
+					Sequence s = (Sequence) t;
+					if (s instanceof Item) {
+						handler.item((Item) s);
+					} else {
+						Iter it = s.iterate();
+						try {
+							for (Item i = it.next(); i != null; i = it.next()) {
+								handler.item(i);
+							}
+						} finally {
+							it.close();
+						}
+					}
+				}
+			}
+		}
+
+		@Override
+		protected void doBegin() throws QueryException {
+			handler.begin();
+		}
+
+		@Override
+		protected void doEnd() throws QueryException {
+			handler.end();
 		}
 	}
 
