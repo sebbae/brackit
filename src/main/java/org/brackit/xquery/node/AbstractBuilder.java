@@ -36,6 +36,7 @@ import org.brackit.xquery.atomic.QNm;
 import org.brackit.xquery.node.parser.SubtreeHandler;
 import org.brackit.xquery.node.parser.SubtreeListener;
 import org.brackit.xquery.xdm.DocumentException;
+import org.brackit.xquery.xdm.Kind;
 import org.brackit.xquery.xdm.Node;
 
 /**
@@ -62,6 +63,11 @@ public abstract class AbstractBuilder<E extends Node<E>> implements
 
 	@Override
 	public void startMapping(String prefix, String uri) throws DocumentException {
+		if ((prefix.isEmpty()) && (parent != null)
+				&& (parent.getKind() == Kind.ELEMENT)
+				&& (parent.getScope().defaultNS().equals(uri))) {
+			return;
+		}
 		if (nsMappings == null) {
 			// use tree map for space-efficiency
 			nsMappings = new TreeMap<String, String>();
