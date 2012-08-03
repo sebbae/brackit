@@ -134,19 +134,22 @@ public class Pool {
 		}
 	}
 
-	void join(Worker w, Task join) {
+	void join(Worker w, Task join, boolean serial) {
 		Task t;
 		int s;
 		int retry = 0;
 		while ((s = join.status) <= 0) {
-			if ((t = w.poll()) != null) {
+			if ((serial) && ((t = queue.poll()) != null)) {
+				exec(w, t);
+				retry = 0;
+			} else if ((t = w.poll()) != null) {
 				exec(w, t);
 				retry = 0;
 			} else if ((t = stealTask(w)) != null) {
 				// process stolen task from other thread
 				t.exec();
 				retry = 0;
-			} else if ((t = queue.poll()) != null) {
+			} else if ((!serial) && ((t = queue.poll()) != null)) {
 				t.exec();
 				retry = 0;
 			} else if (++retry == 16) {

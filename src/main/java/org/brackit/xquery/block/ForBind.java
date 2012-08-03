@@ -131,12 +131,12 @@ public class ForBind implements Block {
 						break;
 					}
 					if (queue.size() == maxQueue) {
-						queue.poll().join();
+						queue.poll().joinSerial();
 					}
 					split = split.tail.split(min, max);
 				}
 				for (Task t = queue.poll(); t != null; t = queue.poll()) {
-					t.join();
+					t.joinSerial();
 				}
 			}
 		}

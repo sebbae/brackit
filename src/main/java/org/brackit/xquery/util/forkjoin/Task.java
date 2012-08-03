@@ -95,11 +95,22 @@ public abstract class Task {
 		Thread me;
 		if ((me = Thread.currentThread()) instanceof Worker) {
 			Worker w = (Worker) me;
-			w.join(this);
+			w.join(this, false);
 		} else {
 			externalWaitForFinish();
 		}
 	}
+	
+	public void joinSerial() {
+		Thread me;
+		if ((me = Thread.currentThread()) instanceof Worker) {
+			Worker w = (Worker) me;
+			w.join(this, true);
+		} else {
+			externalWaitForFinish();
+		}
+	}
+
 
 	public boolean finished() {
 		int s = status;

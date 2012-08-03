@@ -90,8 +90,8 @@ public class Worker extends Thread {
 		pool.run(this);
 	}
 
-	void join(Task t) {
-		pool.join(this, t);
+	void join(Task t, boolean serial) {
+		pool.join(this, t, serial);
 	}
 
 	public String toString() {
