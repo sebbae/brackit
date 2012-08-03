@@ -853,6 +853,7 @@ public class Compiler implements Translator {
 		}
 
 		boolean parentIsConstructor = (parent.getType() == XQ.CompElementConstructor)
+				|| (parent.getType() == XQ.DirElementConstructor)
 				|| (parent.getType() == XQ.CompDocumentConstructor);
 
 		if (parentIsConstructor) {
