@@ -48,15 +48,34 @@ import org.brackit.xquery.xdm.Sequence;
  */
 public class ForBind implements Block {
 
+	public static int MIN = 1;
+	public static int MAX = 1;
+	public static int MAX_QUEUE = 6;
+	public static int SPLIT_INPUT = 50;
+	
 	final Expr expr;
 	final boolean allowingEmpty;
+	final int min;
+	final int max;
+	final int maxQueue;
+	final int splitIn;
 	boolean bindVar = true;
 	boolean bindPos = false;
 
-	public ForBind(Expr bind, boolean allowingEmpty) {
-		this.expr = bind;
-		this.allowingEmpty = allowingEmpty;
+	public ForBind(Expr expr, boolean allowingEmpty) {
+		this(expr, allowingEmpty, MIN, MAX, MAX_QUEUE, SPLIT_INPUT);
 	}
+
+	public ForBind(Expr expr, boolean allowingEmpty, int min, int max,
+			int maxQueue, int splitIn) {
+		this.expr = expr;
+		this.allowingEmpty = allowingEmpty;
+		this.min = min;
+		this.max = max;
+		this.maxQueue = maxQueue;
+		this.splitIn = splitIn;
+	}
+
 
 	@Override
 	public int outputWidth(int initSize) {
@@ -90,7 +109,7 @@ public class ForBind implements Block {
 
 		@Override
 		public void compute() throws QueryException {
-			Split split = it.split(100, 100);
+			Split split = it.split(min, max);
 			if (split.tail == null) {
 				process(split.head);
 			} else if (!split.serial) {
@@ -111,10 +130,10 @@ public class ForBind implements Block {
 					if (split.tail == null) {
 						break;
 					}
-					if (queue.size() == 6) {
+					if (queue.size() == maxQueue) {
 						queue.poll().join();
 					}
-					split = split.tail.split(100, 100);
+					split = split.tail.split(min, max);
 				}
 				for (Task t = queue.poll(); t != null; t = queue.poll()) {
 					t.join();
@@ -126,19 +145,18 @@ public class ForBind implements Block {
 			sink.begin();
 			try {
 				Item i;
-				int size = bufSize();
-				Tuple[] buf = new Tuple[size];
+				Tuple[] buf = new Tuple[max];
 				int len = 0;
 				while ((i = it.next()) != null) {
-					buf[len++] = i;
-					if (len == size) {
-						emit(buf, len);
-						buf = new Tuple[size];
+					buf[len++] = emit(t, i);
+					if (len == max) {
+						sink.output(buf, len);
+						buf = new Tuple[max];
 						len = 0;
 					}
 				}
 				if (len > 0) {
-					emit(buf, len);
+					sink.output(buf, len);
 				}
 			} catch (QueryException e) {
 				sink.fail();
@@ -163,18 +181,6 @@ public class ForBind implements Block {
 				return t;
 			}
 		}
-
-		private void emit(Tuple[] buf, int len) throws QueryException {
-			for (int i = 0; i < len; i++) {
-				buf[i] = emit(t, (Sequence) buf[i]);
-			}
-			sink.output(buf, len);
-		}
-
-		private int bufSize() {
-			// TODO
-			return 200;
-		}
 	}
 
 	private class OutputTask extends Task {
@@ -195,7 +201,7 @@ public class ForBind implements Block {
 
 		@Override
 		public void compute() throws QueryException {
-			if (end - start > 50) {
+			if (end - start > splitIn) {
 				int mid = start + ((end - start) / 2);
 				OutputTask a = new OutputTask(ctx, sink.fork(), buf, mid, end);
 				OutputTask b = new OutputTask(ctx, sink, buf, start, mid);

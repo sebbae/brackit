@@ -27,9 +27,12 @@
  */
 package org.brackit.xquery.compiler.translator;
 
+import java.io.IOException;
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 import org.brackit.xquery.ErrorCode;
 import org.brackit.xquery.QueryException;
@@ -45,8 +48,8 @@ import org.brackit.xquery.block.OrderBy;
 import org.brackit.xquery.block.Select;
 import org.brackit.xquery.block.TableJoin;
 import org.brackit.xquery.compiler.AST;
+import org.brackit.xquery.compiler.Bits;
 import org.brackit.xquery.compiler.XQ;
-import org.brackit.xquery.compiler.translator.Compiler.AggregateBinding;
 import org.brackit.xquery.expr.BlockExpr;
 import org.brackit.xquery.expr.FJExpr;
 import org.brackit.xquery.module.Module;
@@ -63,6 +66,11 @@ import org.brackit.xquery.xdm.type.SequenceType;
  * 
  */
 public class BlockTranslator extends Compiler {
+
+	/**
+	 * 
+	 */
+	private static final QNm PARTITION_PRAGMA = new QNm(Bits.BIT_NSURI, Bits.BIT_PREFIX, "partition");
 
 	public BlockTranslator(Map<QNm, Str> options) {
 		super(options);
@@ -177,7 +185,33 @@ public class BlockTranslator extends Compiler {
 			table.resolve(posVarName);
 			// TODO Optimize and do not bind variable if not necessary
 		}
-		ForBind forBind = new ForBind(sourceExpr, false);
+		
+		ForBind forBind = null;
+		if (posBindingOrSourceExpr.getType() == XQ.ExtensionExpr) {		
+			for (int i = 0; i < posBindingOrSourceExpr.getChildCount() - 1; i++) {
+				AST pragma = posBindingOrSourceExpr.getChild(i);
+				QNm name = (QNm) pragma.getChild(0).getValue();
+				if ((PARTITION_PRAGMA.atomicCmp(name) == 0)) {
+					Properties p = new Properties();
+					try {
+						String cfg = (String) pragma.getChild(1).getValue();
+						cfg=cfg.replaceAll(" ", "\n");
+						p.load(new StringReader(cfg));
+						int min = Integer.parseInt(p.getProperty("min"));
+						int max = Integer.parseInt(p.getProperty("max"));
+						int queue = Integer.parseInt(p.getProperty("queue"));
+						int split = Integer.parseInt(p.getProperty("split"));
+						forBind = new ForBind(sourceExpr, false, min, max, queue, split);
+						break;
+					} catch (Exception e) {
+						throw new QueryException(e, ErrorCode.BIT_DYN_INT_ERROR, "Error parsing pragma content.");
+					}
+				}
+			}
+		}
+		if (forBind == null) {
+			 forBind = new ForBind(sourceExpr, false);
+		}
 		if (posBinding != null) {
 			forBind.bindPosition(posBinding.isReferenced());
 		}
