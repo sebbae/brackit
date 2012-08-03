@@ -51,7 +51,7 @@ public abstract class BaseIter implements Iter {
 	public Split split(int min, int max) throws QueryException {
 		final Item[] buf = new Item[max];
 		int i = 0;
-		while (((buf[i++] = next()) != null) && (i < max))
+		while (((buf[i] = next()) != null) && (++i < max))
 			;
 		Iter head = new ItemIter(buf, 0, i);
 		Iter tail = (i < min) ? null : this;

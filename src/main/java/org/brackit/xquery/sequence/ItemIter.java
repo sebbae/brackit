@@ -55,7 +55,7 @@ public class ItemIter extends BaseIter {
 	@Override
 	public Split split(int min, int max) throws QueryException {						
 		int remaining = end - pos;
-		if (remaining < min) {
+		if (remaining <= min) {
 			return new Split(this, null, false);
 		}
 		int mid = pos + (remaining / 2);
