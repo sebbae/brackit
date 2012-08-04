@@ -136,13 +136,17 @@ public class Pool {
 
 	void join(Worker w, Task join, boolean serial) {
 		if ((serial) && (exec(w, join))) {
+			queue.remove(join);
 			return;
 		}
 		Task t;
 		int s;
 		int retry = 0;
 		while ((s = join.status) <= 0) {
-			if ((t = w.poll()) != null) {
+			if ((serial) && ((t = queue.poll()) != null)) {
+				t.exec();
+				retry = 0;
+			} else if ((t = w.poll()) != null) {
 				exec(w, t);
 				retry = 0;
 			} else if ((t = stealTask(w)) != null) {
