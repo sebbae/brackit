@@ -199,90 +199,12 @@ public class JoinRewriter extends ScopeWalker {
 
 		snapshot();
 		refreshScopes(parent, true);
-		parent = pushLeftInput(join);
-		snapshot();
-		
+
 		parent = pushRightInput(join);
 		snapshot();
 
 		refreshScopes(parent, true);
 		return parent;
-	}
-
-	protected AST pushLeftInput(AST join) {
-		// find closest scope from which
-		// right input is independent of
-		VarRef refs = findVarRefs(join.getChild(1));
-		Scope[] scopes = sortScopes(refs);
-		Scope local = findScope(join);
-
-		AST stopAt = null;
-		for (int i = scopes.length - 1; i >= 0; i--) {
-			Scope scope = scopes[i];
-			if (scope.compareTo(local) < 0) {
-				stopAt = scope.node;
-				break;
-			}
-		}
-
-		// locate farthest scope we can go to
-		AST parent = join.getParent();
-		AST target = parent;
-		boolean reachedStopAt = false;
-		while (true) {
-			reachedStopAt = (reachedStopAt || (target == stopAt));   
-			if (target.getType() == XQ.Start) {
-				if (target.getParent().getType() != XQ.Join) {
-					return join;
-				}
-				target = target.getParent().getParent();
-			} else if (target.getType() == XQ.LetBind) {
-				// let-bindings are "static" within an iteration;
-				// we may safely increase the scope
-				target = target.getParent();	
-			} else if (reachedStopAt) {
-				break;
-			} else {
-				target = target.getParent();
-			}
-		}
-		
-		/*
-		 * CAVEAT: Ensure that begin of right
-		 * input is inside current pipeline!!!
-		 */
-		AST rightInRoot = join.getParent();
-		while ((rightInRoot.getType() != XQ.Start) && (rightInRoot != target)) {
-			rightInRoot = rightInRoot.getParent();
-		}
-		
-		// create copy of pipeline section between
-		// target and this node
-		AST copy = new AST(XQ.Start);
-		AST copyEnd = copy;
-		AST tmp = rightInRoot.getLastChild();
-		if (tmp == join) {
-			// stop if there's nothing to do
-			return join;
-		}
-		while (tmp != join) {
-			AST clone = tmp.copy();
-			for (int i = 0; i < tmp.getChildCount() - 1; i++) {
-				clone.addChild(tmp.getChild(i).copyTree());
-			}
-			copyEnd.addChild(clone);
-			copyEnd = clone;
-			tmp = tmp.getLastChild();
-		}
-
-		// now append copy of current right input
-		copyEnd.addChild(join.getChild(1).getChild(0).copyTree());
-		// replace left input with copy
-		join.replaceChild(0, copy);
-		// cut-out moved pipeline section
-		rightInRoot.replaceChild(rightInRoot.getChildCount() - 1, join);
-
-		return rightInRoot;
 	}
 
 	protected AST pushRightInput(AST join) {
