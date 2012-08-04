@@ -76,7 +76,6 @@ public class Grouping {
 		if (this.tupleSize != -1) {
 			return;
 		}
-		this.tupleSize = tupleSize;
 		int len = tupleSize + additionalAggs.length;
 		this.aggSpecs = new Aggregate[len];
 		this.aggs = new Aggregator[len];
@@ -101,6 +100,7 @@ public class Grouping {
 			onlyFirst[pos] = (aggSpecs[pos] == Aggregate.SINGLE);
 		}
 		clear();
+		this.tupleSize = tupleSize;
 	}
 
 	public int getSize() {
