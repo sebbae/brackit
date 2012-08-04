@@ -40,17 +40,25 @@ public abstract class Task {
 	private static final AtomicIntegerFieldUpdater<Task> STATUS_CAS = AtomicIntegerFieldUpdater
 			.newUpdater(Task.class, "status");
 
+	private static final AtomicIntegerFieldUpdater<Task> PROCESS_CAS = AtomicIntegerFieldUpdater
+			.newUpdater(Task.class, "process");
+	
+	private static final int NOTIFY = -1;
+	private static final int NEW = 0;
 	private static final int SUCCESS = 1;
 	private static final int ERROR = 2;
-	private static final int NOTIFY = -1;
 
 	volatile Thread join;
-	volatile int status = 0;
+	volatile int status = NEW;
+	volatile int process = 0;
 	Throwable throwable;
 
 	public abstract void compute() throws Throwable;
 
-	void exec() {
+	boolean exec() {
+		if (!PROCESS_CAS.compareAndSet(this, 0, 1)) {
+			return false;
+		}
 		try {
 			int s = status;
 			if (s > 0) {
@@ -63,6 +71,7 @@ public abstract class Task {
 			throwable = e;
 			setStatus(ERROR);
 		}
+		return true;
 	}
 
 	private int setStatus(int newStatus) {

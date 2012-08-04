@@ -135,14 +135,14 @@ public class Pool {
 	}
 
 	void join(Worker w, Task join, boolean serial) {
+		if ((serial) && (exec(w, join))) {
+			return;
+		}
 		Task t;
 		int s;
 		int retry = 0;
 		while ((s = join.status) <= 0) {
-			if ((serial) && ((t = queue.poll()) != null)) {
-				exec(w, t);
-				retry = 0;
-			} else if ((t = w.poll()) != null) {
+			if ((t = w.poll()) != null) {
 				exec(w, t);
 				retry = 0;
 			} else if ((t = stealTask(w)) != null) {
@@ -195,12 +195,15 @@ public class Pool {
 		}
 	}
 
-	private void exec(Worker w, Task t) {
+	private boolean exec(Worker w, Task t) {
 		long start = System.currentTimeMillis();
-		t.exec();
+		boolean executed = t.exec();
 		long end = System.currentTimeMillis();
-		w.stats.execCnt++;
-		w.stats.execTime += (end - start);
+		if (executed) {
+			w.stats.execCnt++;
+			w.stats.execTime += (end - start);
+		}
+		return executed;
 	}
 
 	public List<WorkerStats> getStats() {
