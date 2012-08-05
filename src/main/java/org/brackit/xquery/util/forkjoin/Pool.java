@@ -218,4 +218,11 @@ public class Pool {
 		}
 		return stats;
 	}
+	
+	public void shutdown() {
+		for (Worker w : workers) {
+			w.setTerminate(true);
+			LockSupport.unpark(w);
+		}
+	}
 }

@@ -47,6 +47,7 @@ public class FJControl {
 		if (newSize <= 0) {
 			throw new IllegalArgumentException("Illegal pool size: " + newSize);
 		}
+		POOL.shutdown();
 		POOL_SIZE = newSize;
 		POOL = new Pool(POOL_SIZE, FACTORY);
 	}
