@@ -133,7 +133,31 @@ public class XQuery {
 	}
 	
 	public void serialize(QueryContext ctx, SerializationHandler handler) throws QueryException {
-		((FJExpr) module.getBody()).serialize(ctx, new TupleImpl(), handler);
+		if (module.getBody() instanceof FJExpr) {
+			((FJExpr) module.getBody()).serialize(ctx, new TupleImpl(), handler);
+		} else {			
+			handler.begin();
+			try {
+				Sequence s = module.getBody().evaluate(ctx, new TupleImpl());
+				if (s == null) {
+					return;
+				}
+				if (s instanceof Item) {
+					handler.item((Item) s);
+				} else {
+					Iter it = s.iterate();
+					try {
+						for (Item i = it.next(); i != null; i = it.next()) {
+							handler.item(i);
+						}
+					} finally {
+						it.close();
+					}
+				}
+			} finally {
+				handler.end();
+			}
+		}
 	}
 
 	public boolean isPrettyPrint() {
