@@ -32,10 +32,12 @@ import org.brackit.xquery.QueryContext;
 import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
 import org.brackit.xquery.block.FJControl;
+import org.brackit.xquery.operator.TupleImpl;
 import org.brackit.xquery.util.forkjoin.Task;
 import org.brackit.xquery.util.serialize.SerializationHandler;
 import org.brackit.xquery.xdm.Expr;
 import org.brackit.xquery.xdm.Item;
+import org.brackit.xquery.xdm.Iter;
 import org.brackit.xquery.xdm.Sequence;
 
 /**
@@ -123,7 +125,31 @@ public class FJExpr implements Expr {
 
 		@Override
 		public void compute() throws Throwable {
-			((BlockExpr) expr).serialize(ctx, tuple, handler);
+			if (expr instanceof BlockExpr) {
+				((BlockExpr) expr).serialize(ctx, tuple, handler);
+			} else {
+				handler.begin();
+				try {
+					Sequence s = expr.evaluate(ctx, new TupleImpl());
+					if (s == null) {
+						return;
+					}
+					if (s instanceof Item) {
+						handler.item((Item) s);
+					} else {
+						Iter it = s.iterate();
+						try {
+							for (Item i = it.next(); i != null; i = it.next()) {
+								handler.item(i);
+							}
+						} finally {
+							it.close();
+						}
+					}
+				} finally {
+					handler.end();
+				}
+			}
 		}
 		
 		public void getResult() throws QueryException {
