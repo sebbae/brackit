@@ -35,6 +35,7 @@ import org.brackit.xquery.QueryException;
 import org.brackit.xquery.Tuple;
 import org.brackit.xquery.atomic.Atomic;
 import org.brackit.xquery.compiler.translator.Reference;
+import org.brackit.xquery.util.Cfg;
 import org.brackit.xquery.util.Cmp;
 import org.brackit.xquery.util.join.FastList;
 import org.brackit.xquery.util.join.MultiTypeJoinTable;
@@ -58,7 +59,7 @@ public class TableJoin implements Block {
 	final int pad;
 	int groupVar = -1;
 
-	boolean ordRight = true;
+	boolean ordRight = org.brackit.xquery.util.Cfg.asBool("org.brackit.xquery.join.loadordered", true);
 	int rPermits = FJControl.PERMITS;
 
 	public TableJoin(Cmp cmp, boolean isGCmsp, boolean leftJoin,
@@ -156,7 +157,9 @@ public class TableJoin implements Block {
 					if (hasToken) {
 						// load table with first tuple in probe window
 						Tuple t = buf[start];
+						System.out.println("START LOAD");
 						load(t);
+						System.out.println("END LOAD");
 						end = start;
 						continue;
 					} else {
@@ -379,6 +382,8 @@ public class TableJoin implements Block {
 					Sequence[] tmp = t.array();
 					Sequence[] bindings = Arrays.copyOfRange(tmp, offset,
 							tmp.length);
+					bindings[0] = null;
+					bindings[1] = ((org.brackit.xquery.xdm.Node<?>) bindings[1].iterate().next()).getFirstChild().getFirstChild().getValue();
 					table.add(keys, bindings, pos++);
 				}
 			}
